@@ -34,21 +34,24 @@ func testTxCommitVisibility(t *testing.T, h Harness) {
 	es, err := h.Factory.EntityStore(txCtx)
 	require.NoError(t, err)
 
-	ent := newEntity(t, "m-commit", "e1", map[string]any{"k": "v"})
+	id := newID()
+	ent := newEntity(t, "m-commit", id, map[string]any{"k": "v"})
 	_, err = es.Save(txCtx, ent)
 	require.NoError(t, err)
 
 	// Outside-tx read must not see the write yet.
 	esOutside, err := h.Factory.EntityStore(ctx)
 	require.NoError(t, err)
-	_, err = esOutside.Get(ctx, "e1")
+	_, err = esOutside.Get(ctx, id)
 	require.ErrorIs(t, err, spi.ErrNotFound, "outside reader must not see uncommitted write")
 
-	require.NoError(t, tm.Commit(ctx, txID))
+	// Use txCtx (not ctx) so backends that store tx-state in the context
+	// (e.g. Cassandra) can locate the transaction on Commit.
+	require.NoError(t, tm.Commit(txCtx, txID))
 
-	got, err := esOutside.Get(ctx, "e1")
+	got, err := esOutside.Get(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, "e1", got.Meta.ID)
+	require.Equal(t, id, got.Meta.ID)
 }
 
 func testTxRollbackDiscards(t *testing.T, h Harness) {
@@ -56,42 +59,49 @@ func testTxRollbackDiscards(t *testing.T, h Harness) {
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
+	id := newID()
 	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
 	es, err := h.Factory.EntityStore(txCtx)
 	require.NoError(t, err)
-	_, err = es.Save(txCtx, newEntity(t, "m-rb", "e1", map[string]any{"k": 1}))
+	_, err = es.Save(txCtx, newEntity(t, "m-rb", id, map[string]any{"k": 1}))
 	require.NoError(t, err)
 
-	require.NoError(t, tm.Rollback(ctx, txID))
+	// Use txCtx (not ctx) so backends that embed tx-state in the context
+	// (e.g. Cassandra) can locate the transaction on Rollback.
+	require.NoError(t, tm.Rollback(txCtx, txID))
 
 	esOutside, err := h.Factory.EntityStore(ctx)
 	require.NoError(t, err)
-	_, err = esOutside.Get(ctx, "e1")
+	_, err = esOutside.Get(ctx, id)
 	require.ErrorIs(t, err, spi.ErrNotFound, "rolled-back write must never be visible")
 }
 
 func testTxJoin(t *testing.T, h Harness) {
+	h.skipIfRegistered(t, "Join")
 	ctx := tenantContext(h.NewTenant())
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
+	id := newID()
 	txID, txCtx1, err := tm.Begin(ctx)
 	require.NoError(t, err)
 	es1, err := h.Factory.EntityStore(txCtx1)
 	require.NoError(t, err)
-	_, err = es1.Save(txCtx1, newEntity(t, "m-join", "e1", map[string]any{"side": "A"}))
+	_, err = es1.Save(txCtx1, newEntity(t, "m-join", id, map[string]any{"side": "A"}))
 	require.NoError(t, err)
 
 	txCtx2, err := tm.Join(ctx, txID)
 	require.NoError(t, err)
 	es2, err := h.Factory.EntityStore(txCtx2)
 	require.NoError(t, err)
-	got, err := es2.Get(txCtx2, "e1")
+	got, err := es2.Get(txCtx2, id)
 	require.NoError(t, err)
-	require.Equal(t, "e1", got.Meta.ID, "second caller on same tx must see first caller's uncommitted write")
+	require.Equal(t, id, got.Meta.ID, "second caller on same tx must see first caller's uncommitted write")
 
-	require.NoError(t, tm.Rollback(ctx, txID))
+	// Use txCtx1 (not ctx) so backends that embed tx-state in the context
+	// (e.g. Cassandra) can locate the transaction on Rollback.
+	require.NoError(t, tm.Rollback(txCtx1, txID))
 }
 
 func testTxSubmitTime(t *testing.T, h Harness) {
@@ -100,9 +110,11 @@ func testTxSubmitTime(t *testing.T, h Harness) {
 	require.NoError(t, err)
 
 	before := time.Now().UTC()
-	txID, _, err := tm.Begin(ctx)
+	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, tm.Commit(ctx, txID))
+	// Pass txCtx (not ctx) so backends that store tx-state in the context
+	// (e.g. Cassandra) can locate the transaction on Commit.
+	require.NoError(t, tm.Commit(txCtx, txID))
 	after := time.Now().UTC()
 
 	submit, err := tm.GetSubmitTime(ctx, txID)
@@ -118,26 +130,34 @@ func testTxSavepointRelease(t *testing.T, h Harness) {
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
+	idPre := newID()
+	idPost := newID()
+
 	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
 	es, err := h.Factory.EntityStore(txCtx)
 	require.NoError(t, err)
-	_, err = es.Save(txCtx, newEntity(t, "m-sp", "pre", map[string]any{}))
+	_, err = es.Save(txCtx, newEntity(t, "m-sp", idPre, map[string]any{}))
 	require.NoError(t, err)
 
-	sp, err := tm.Savepoint(ctx, txID)
+	// Use txCtx for all TM calls after Begin: Cassandra embeds tx-state in
+	// the context and requires it for Savepoint, ReleaseSavepoint, and Commit.
+	sp, err := tm.Savepoint(txCtx, txID)
 	require.NoError(t, err)
-	_, err = es.Save(txCtx, newEntity(t, "m-sp", "post", map[string]any{}))
+	// After Savepoint, txCtx is replaced with the new savepoint context.
+	// Save subsequent entities via the original es (which was created from
+	// the original txCtx); further saves after Savepoint still use txCtx.
+	_, err = es.Save(txCtx, newEntity(t, "m-sp", idPost, map[string]any{}))
 	require.NoError(t, err)
 
-	require.NoError(t, tm.ReleaseSavepoint(ctx, txID, sp))
-	require.NoError(t, tm.Commit(ctx, txID))
+	require.NoError(t, tm.ReleaseSavepoint(txCtx, txID, sp))
+	require.NoError(t, tm.Commit(txCtx, txID))
 
 	esOut, err := h.Factory.EntityStore(ctx)
 	require.NoError(t, err)
-	_, err = esOut.Get(ctx, "pre")
+	_, err = esOut.Get(ctx, idPre)
 	require.NoError(t, err, "pre-savepoint write must survive release")
-	_, err = esOut.Get(ctx, "post")
+	_, err = esOut.Get(ctx, idPost)
 	require.NoError(t, err, "post-savepoint write must survive release")
 }
 
@@ -146,26 +166,31 @@ func testTxSavepointRollback(t *testing.T, h Harness) {
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
+	idPre := newID()
+	idPost := newID()
+
 	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
 	es, err := h.Factory.EntityStore(txCtx)
 	require.NoError(t, err)
-	_, err = es.Save(txCtx, newEntity(t, "m-sp", "pre", map[string]any{}))
+	_, err = es.Save(txCtx, newEntity(t, "m-sp", idPre, map[string]any{}))
 	require.NoError(t, err)
 
-	sp, err := tm.Savepoint(ctx, txID)
+	// Use txCtx for all TM calls after Begin: Cassandra embeds tx-state in
+	// the context and requires it for Savepoint, RollbackToSavepoint, and Commit.
+	sp, err := tm.Savepoint(txCtx, txID)
 	require.NoError(t, err)
-	_, err = es.Save(txCtx, newEntity(t, "m-sp", "post", map[string]any{}))
+	_, err = es.Save(txCtx, newEntity(t, "m-sp", idPost, map[string]any{}))
 	require.NoError(t, err)
 
-	require.NoError(t, tm.RollbackToSavepoint(ctx, txID, sp))
-	require.NoError(t, tm.Commit(ctx, txID))
+	require.NoError(t, tm.RollbackToSavepoint(txCtx, txID, sp))
+	require.NoError(t, tm.Commit(txCtx, txID))
 
 	esOut, err := h.Factory.EntityStore(ctx)
 	require.NoError(t, err)
-	_, err = esOut.Get(ctx, "pre")
+	_, err = esOut.Get(ctx, idPre)
 	require.NoError(t, err, "pre-savepoint write must survive rollback-to-savepoint")
-	_, err = esOut.Get(ctx, "post")
+	_, err = esOut.Get(ctx, idPost)
 	require.ErrorIs(t, err, spi.ErrNotFound, "post-savepoint write must be discarded")
 }
 
@@ -174,9 +199,11 @@ func testTxBeginAfterCommit(t *testing.T, h Harness) {
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
-	txID, _, err := tm.Begin(ctx)
+	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, tm.Commit(ctx, txID))
+	// Pass txCtx (not ctx) so backends that store tx-state in the context
+	// (e.g. Cassandra) can locate the transaction on Commit.
+	require.NoError(t, tm.Commit(txCtx, txID))
 
 	// Re-joining a committed tx must fail. We can't use errors.Is against
 	// a specific sentinel because the SPI does not yet define one for

@@ -33,6 +33,21 @@ type Harness struct {
 	// The harness invokes this at the start of every subtest; no subtest
 	// reuses another's tenant. Optional; defaults to a uuid-based generator.
 	NewTenant func() spi.TenantID
+
+	// Skip is an optional map from subtest name to skip reason.
+	// When a subtest's name matches a key, the harness calls t.Skip(reason)
+	// at the start of that subtest. Use the leaf name (e.g. "Join"), not the
+	// full path. Backends with known structural incompatibilities populate this
+	// to prevent false failures while documenting the open issues.
+	Skip map[string]string
+}
+
+// skipIfRegistered calls t.Skip if the subtest name appears in h.Skip.
+func (h Harness) skipIfRegistered(t *testing.T, name string) {
+	t.Helper()
+	if reason, ok := h.Skip[name]; ok {
+		t.Skip(reason)
+	}
 }
 
 // StoreFactoryConformance runs the full conformance suite against h.

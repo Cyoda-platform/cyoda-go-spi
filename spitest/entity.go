@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -49,18 +48,19 @@ func runEntitySuite(t *testing.T, h Harness) {
 
 func testEntityCreateAndGet(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, err := h.Factory.EntityStore(txCtx)
 		require.NoError(t, err)
-		_, err = es.Save(txCtx, newEntity(t, "m-crud", "e1", map[string]any{"k": "v"}))
+		_, err = es.Save(txCtx, newEntity(t, "m-crud", id, map[string]any{"k": "v"}))
 		require.NoError(t, err)
 	})
 
 	es, err := h.Factory.EntityStore(ctx)
 	require.NoError(t, err)
-	got, err := es.Get(ctx, "e1")
+	got, err := es.Get(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, "e1", got.Meta.ID)
+	require.Equal(t, id, got.Meta.ID)
 	require.Equal(t, "m-crud", got.Meta.ModelRef.EntityName)
 	// State is intentionally NOT asserted: it is set by the workflow engine
 	// when a model has a workflow defined. Bare saves with no workflow
@@ -73,9 +73,10 @@ func testEntityCreateAndGet(t *testing.T, h Harness) {
 
 func testEntityUpdate(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-upd", "e1", map[string]any{"v": 1}))
+		_, err := es.Save(txCtx, newEntity(t, "m-upd", id, map[string]any{"v": 1}))
 		require.NoError(t, err)
 	})
 
@@ -83,21 +84,21 @@ func testEntityUpdate(t *testing.T, h Harness) {
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-upd", "e1", map[string]any{"v": 2}))
+		_, err := es.Save(txCtx, newEntity(t, "m-upd", id, map[string]any{"v": 2}))
 		require.NoError(t, err)
 	})
 
 	es, _ := h.Factory.EntityStore(ctx)
-	got, err := es.Get(ctx, "e1")
+	got, err := es.Get(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, "e1", got.Meta.ID)
+	require.Equal(t, id, got.Meta.ID)
 	require.Contains(t, string(got.Data), `"v":2`)
 }
 
 func testEntityGetNotFound(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
 	es, _ := h.Factory.EntityStore(ctx)
-	_, err := es.Get(ctx, "does-not-exist")
+	_, err := es.Get(ctx, newID()) // valid UUID that was never written
 	require.ErrorIs(t, err, spi.ErrNotFound)
 }
 
@@ -116,7 +117,7 @@ func testEntityGetAllPopulation(t *testing.T, h Harness) {
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
 		for i := 0; i < n; i++ {
-			_, err := es.Save(txCtx, newEntity(t, "m-pop", fmt.Sprintf("e%d", i), map[string]any{"i": i}))
+			_, err := es.Save(txCtx, newEntity(t, "m-pop", newID(), map[string]any{"i": i}))
 			require.NoError(t, err)
 		}
 	})
@@ -129,19 +130,20 @@ func testEntityGetAllPopulation(t *testing.T, h Harness) {
 
 func testEntityDelete(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-del", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-del", id, map[string]any{}))
 		require.NoError(t, err)
 	})
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		require.NoError(t, es.Delete(txCtx, "e1"))
+		require.NoError(t, es.Delete(txCtx, id))
 	})
 
 	es, _ := h.Factory.EntityStore(ctx)
-	_, err := es.Get(ctx, "e1")
+	_, err := es.Get(ctx, id)
 	require.ErrorIs(t, err, spi.ErrNotFound)
 }
 
@@ -149,7 +151,7 @@ func testEntityDeleteNotFound(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		err := es.Delete(txCtx, "never-created")
+		err := es.Delete(txCtx, newID()) // valid UUID that was never created
 		require.ErrorIs(t, err, spi.ErrNotFound)
 	})
 }
@@ -160,7 +162,7 @@ func testEntityDeleteAll(t *testing.T, h Harness) {
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
 		for i := 0; i < 3; i++ {
-			_, err := es.Save(txCtx, newEntity(t, "m-delall", fmt.Sprintf("e%d", i), map[string]any{}))
+			_, err := es.Save(txCtx, newEntity(t, "m-delall", newID(), map[string]any{}))
 			require.NoError(t, err)
 		}
 	})
@@ -178,21 +180,22 @@ func testEntityDeleteAll(t *testing.T, h Harness) {
 
 func testEntityExists(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-ex", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-ex", id, map[string]any{}))
 		require.NoError(t, err)
 	})
 	es, _ := h.Factory.EntityStore(ctx)
-	ok, err := es.Exists(ctx, "e1")
+	ok, err := es.Exists(ctx, id)
 	require.NoError(t, err)
 	require.True(t, ok)
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		require.NoError(t, es.Delete(txCtx, "e1"))
+		require.NoError(t, es.Delete(txCtx, id))
 	})
-	ok, err = es.Exists(ctx, "e1")
+	ok, err = es.Exists(ctx, id)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -203,7 +206,7 @@ func testEntityCount(t *testing.T, h Harness) {
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
 		for i := 0; i < 7; i++ {
-			_, err := es.Save(txCtx, newEntity(t, "m-cnt", fmt.Sprintf("e%d", i), map[string]any{}))
+			_, err := es.Save(txCtx, newEntity(t, "m-cnt", newID(), map[string]any{}))
 			require.NoError(t, err)
 		}
 	})
@@ -217,9 +220,9 @@ func testEntitySaveAllOrdering(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
 	mref := spi.ModelRef{EntityName: "m-sa", ModelVersion: "1"}
 	ents := []*spi.Entity{
-		newEntity(t, "m-sa", "a", map[string]any{"i": 0}),
-		newEntity(t, "m-sa", "b", map[string]any{"i": 1}),
-		newEntity(t, "m-sa", "c", map[string]any{"i": 2}),
+		newEntity(t, "m-sa", newID(), map[string]any{"i": 0}),
+		newEntity(t, "m-sa", newID(), map[string]any{"i": 1}),
+		newEntity(t, "m-sa", newID(), map[string]any{"i": 2}),
 	}
 	var versions []int64
 	withTx(t, h, ctx, func(txCtx context.Context) {
@@ -243,8 +246,8 @@ func testEntitySaveAllAtomicity(t *testing.T, h Harness) {
 	require.NoError(t, err)
 	es, _ := h.Factory.EntityStore(txCtx)
 	_, err = es.SaveAll(txCtx, iterSeq([]*spi.Entity{
-		newEntity(t, "m-saa", "a", map[string]any{}),
-		newEntity(t, "m-saa", "b", map[string]any{}),
+		newEntity(t, "m-saa", newID(), map[string]any{}),
+		newEntity(t, "m-saa", newID(), map[string]any{}),
 	}))
 	require.NoError(t, err)
 	require.NoError(t, tm.Rollback(ctx, txID))
@@ -256,6 +259,7 @@ func testEntitySaveAllAtomicity(t *testing.T, h Harness) {
 
 func testEntityJSONFidelity(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	payload := map[string]any{
 		"nested": map[string]any{
 			"arr":     []any{1.0, 2.0, nil, "three", map[string]any{"k": "v"}},
@@ -270,11 +274,11 @@ func testEntityJSONFidelity(t *testing.T, h Harness) {
 	// json.Number decoding for a reliable equality check.
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-json", "e1", payload))
+		_, err := es.Save(txCtx, newEntity(t, "m-json", id, payload))
 		require.NoError(t, err)
 	})
 	es, _ := h.Factory.EntityStore(ctx)
-	got, err := es.Get(ctx, "e1")
+	got, err := es.Get(ctx, id)
 	require.NoError(t, err)
 	var roundTripped map[string]any
 	require.NoError(t, json.Unmarshal(got.Data, &roundTripped))
@@ -283,10 +287,11 @@ func testEntityJSONFidelity(t *testing.T, h Harness) {
 
 func testEntityGetAsAtHistorical(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	// Write v=1, advance, capture tBetween12, advance, write v=2, advance.
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-asat", "e1", map[string]any{"v": 1}))
+		_, err := es.Save(txCtx, newEntity(t, "m-asat", id, map[string]any{"v": 1}))
 		require.NoError(t, err)
 	})
 	h.AdvanceClock(1 * time.Millisecond)
@@ -295,22 +300,23 @@ func testEntityGetAsAtHistorical(t *testing.T, h Harness) {
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-asat", "e1", map[string]any{"v": 2}))
+		_, err := es.Save(txCtx, newEntity(t, "m-asat", id, map[string]any{"v": 2}))
 		require.NoError(t, err)
 	})
 	h.AdvanceClock(1 * time.Millisecond)
 
 	es, _ := h.Factory.EntityStore(ctx)
-	got, err := es.GetAsAt(ctx, "e1", tBetween12)
+	got, err := es.GetAsAt(ctx, id, tBetween12)
 	require.NoError(t, err)
 	require.Contains(t, string(got.Data), `"v":1`, "GetAsAt(tBetween12) must return v=1")
 }
 
 func testEntityGetAsAtMeta(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-meta", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-meta", id, map[string]any{}))
 		require.NoError(t, err)
 	})
 	h.AdvanceClock(1 * time.Millisecond)
@@ -318,20 +324,20 @@ func testEntityGetAsAtMeta(t *testing.T, h Harness) {
 	h.AdvanceClock(1 * time.Millisecond)
 
 	es, _ := h.Factory.EntityStore(ctx)
-	got, err := es.GetAsAt(ctx, "e1", asAt)
+	got, err := es.GetAsAt(ctx, id, asAt)
 	require.NoError(t, err)
 	// State intentionally not asserted (see testEntityCreateAndGet).
 	require.False(t, got.Meta.CreationDate.IsZero(), "GetAsAt must populate CreationDate")
 	require.False(t, got.Meta.LastModifiedDate.IsZero(), "GetAsAt must populate LastModifiedDate")
 	require.NotEmpty(t, got.Meta.TransactionID, "GetAsAt must populate TransactionID")
-	require.Equal(t, "e1", got.Meta.ID)
+	require.Equal(t, id, got.Meta.ID)
 }
 
 func testEntityGetAsAtBefore(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
 	past := h.Now().UTC().Add(-1 * time.Hour)
 	es, _ := h.Factory.EntityStore(ctx)
-	_, err := es.GetAsAt(ctx, "never-written", past)
+	_, err := es.GetAsAt(ctx, newID(), past) // valid UUID, never written
 	require.ErrorIs(t, err, spi.ErrNotFound)
 }
 
@@ -341,7 +347,7 @@ func testEntityGetAllAsAt(t *testing.T, h Harness) {
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
 		for i := 0; i < 3; i++ {
-			_, err := es.Save(txCtx, newEntity(t, "m-allasat", fmt.Sprintf("e%d", i), map[string]any{"i": i}))
+			_, err := es.Save(txCtx, newEntity(t, "m-allasat", newID(), map[string]any{"i": i}))
 			require.NoError(t, err)
 		}
 	})
@@ -352,7 +358,7 @@ func testEntityGetAllAsAt(t *testing.T, h Harness) {
 	// Fourth entity written AFTER asAt — must not be returned.
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-allasat", "e-future", map[string]any{"i": 99}))
+		_, err := es.Save(txCtx, newEntity(t, "m-allasat", newID(), map[string]any{"i": 99}))
 		require.NoError(t, err)
 	})
 
@@ -364,16 +370,17 @@ func testEntityGetAllAsAt(t *testing.T, h Harness) {
 
 func testEntityVersionHistory(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	for i := 0; i < 3; i++ {
 		withTx(t, h, ctx, func(txCtx context.Context) {
 			es, _ := h.Factory.EntityStore(txCtx)
-			_, err := es.Save(txCtx, newEntity(t, "m-hist", "e1", map[string]any{"v": i}))
+			_, err := es.Save(txCtx, newEntity(t, "m-hist", id, map[string]any{"v": i}))
 			require.NoError(t, err)
 		})
 		h.AdvanceClock(1 * time.Millisecond)
 	}
 	es, _ := h.Factory.EntityStore(ctx)
-	history, err := es.GetVersionHistory(ctx, "e1")
+	history, err := es.GetVersionHistory(ctx, id)
 	require.NoError(t, err)
 	require.Len(t, history, 3)
 	for i := 1; i < len(history); i++ {
@@ -384,54 +391,60 @@ func testEntityVersionHistory(t *testing.T, h Harness) {
 
 func testEntityCompareAndSaveSuccess(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-cas", "e1", map[string]any{"v": 1}))
+		_, err := es.Save(txCtx, newEntity(t, "m-cas", id, map[string]any{"v": 1}))
 		require.NoError(t, err)
 	})
 
 	es, _ := h.Factory.EntityStore(ctx)
-	got, err := es.Get(ctx, "e1")
+	got, err := es.Get(ctx, id)
 	require.NoError(t, err)
 	firstTxID := got.Meta.TransactionID
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.CompareAndSave(txCtx, newEntity(t, "m-cas", "e1", map[string]any{"v": 2}), firstTxID)
+		_, err := es.CompareAndSave(txCtx, newEntity(t, "m-cas", id, map[string]any{"v": 2}), firstTxID)
 		require.NoError(t, err)
 	})
 
-	got, err = es.Get(ctx, "e1")
+	got, err = es.Get(ctx, id)
 	require.NoError(t, err)
 	require.Contains(t, string(got.Data), `"v":2`)
 }
 
 func testEntityCompareAndSaveConflict(t *testing.T, h Harness) {
+	h.skipIfRegistered(t, "Conflict")
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-cas", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-cas", id, map[string]any{}))
 		require.NoError(t, err)
 	})
 
 	tm, _ := h.Factory.TransactionManager(ctx)
 	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
-	defer func() { _ = tm.Rollback(ctx, txID) }()
+	// Use txCtx so backends that embed tx-state in context (e.g. Cassandra)
+	// can locate the transaction on Rollback.
+	defer func() { _ = tm.Rollback(txCtx, txID) }()
 	es, _ := h.Factory.EntityStore(txCtx)
-	_, err = es.CompareAndSave(txCtx, newEntity(t, "m-cas", "e1", map[string]any{}), "stale-tx-id")
+	_, err = es.CompareAndSave(txCtx, newEntity(t, "m-cas", id, map[string]any{}), "stale-tx-id")
 	require.ErrorIs(t, err, spi.ErrConflict, "CompareAndSave with stale expectedTxID must return ErrConflict")
 }
 
 func testEntityConcurrentConflict(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
+	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-cc", "e1", map[string]any{"v": 0}))
+		_, err := es.Save(txCtx, newEntity(t, "m-cc", id, map[string]any{"v": 0}))
 		require.NoError(t, err)
 	})
 	es0, _ := h.Factory.EntityStore(ctx)
-	got, _ := es0.Get(ctx, "e1")
+	got, _ := es0.Get(ctx, id)
 	baseTxID := got.Meta.TransactionID
 
 	errs := make(chan error, 2)
@@ -443,13 +456,17 @@ func testEntityConcurrentConflict(t *testing.T, h Harness) {
 			return
 		}
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, e = es.CompareAndSave(txCtx, newEntity(t, "m-cc", "e1", map[string]any{"v": v}), baseTxID)
+		_, e = es.CompareAndSave(txCtx, newEntity(t, "m-cc", id, map[string]any{"v": v}), baseTxID)
 		if e != nil {
-			_ = tm.Rollback(ctx, txID)
+			// Use txCtx so backends that embed tx-state in context can
+			// locate the transaction on Rollback (e.g. Cassandra).
+			_ = tm.Rollback(txCtx, txID)
 			errs <- e
 			return
 		}
-		errs <- tm.Commit(ctx, txID)
+		// Use txCtx so backends that embed tx-state in context can
+		// locate the transaction on Commit (e.g. Cassandra).
+		errs <- tm.Commit(txCtx, txID)
 	}
 	go run(1)
 	go run(2)
@@ -477,6 +494,7 @@ func testEntityConcurrentDifferent(t *testing.T, h Harness) {
 	errs := make(chan error, n)
 	for i := 0; i < n; i++ {
 		go func(i int) {
+			id := newID()
 			tm, _ := h.Factory.TransactionManager(ctx)
 			txID, txCtx, e := tm.Begin(ctx)
 			if e != nil {
@@ -484,13 +502,17 @@ func testEntityConcurrentDifferent(t *testing.T, h Harness) {
 				return
 			}
 			es, _ := h.Factory.EntityStore(txCtx)
-			_, e = es.Save(txCtx, newEntity(t, "m-cd", fmt.Sprintf("e%d", i), map[string]any{"i": i}))
+			_, e = es.Save(txCtx, newEntity(t, "m-cd", id, map[string]any{"i": i}))
 			if e != nil {
-				_ = tm.Rollback(ctx, txID)
+				// Use txCtx so backends that embed tx-state in context can
+				// locate the transaction on Rollback (e.g. Cassandra).
+				_ = tm.Rollback(txCtx, txID)
 				errs <- e
 				return
 			}
-			errs <- tm.Commit(ctx, txID)
+			// Use txCtx so backends that embed tx-state in context can
+			// locate the transaction on Commit (e.g. Cassandra).
+			errs <- tm.Commit(txCtx, txID)
 		}(i)
 	}
 	for i := 0; i < n; i++ {
@@ -506,15 +528,16 @@ func testEntityTenantIsolationGet(t *testing.T, h Harness) {
 	tA := h.NewTenant()
 	tB := h.NewTenant()
 	ctxA, ctxB := tenantContext(tA), tenantContext(tB)
+	id := newID()
 
 	withTx(t, h, ctxA, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-ti", "e1", map[string]any{"t": "A"}))
+		_, err := es.Save(txCtx, newEntity(t, "m-ti", id, map[string]any{"t": "A"}))
 		require.NoError(t, err)
 	})
 
 	esB, _ := h.Factory.EntityStore(ctxB)
-	_, err := esB.Get(ctxB, "e1")
+	_, err := esB.Get(ctxB, id)
 	require.ErrorIs(t, err, spi.ErrNotFound, "cross-tenant Get must return ErrNotFound")
 }
 
@@ -525,7 +548,7 @@ func testEntityTenantIsolationGetAll(t *testing.T, h Harness) {
 
 	withTx(t, h, ctxA, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-tigetall", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-tigetall", newID(), map[string]any{}))
 		require.NoError(t, err)
 	})
 
@@ -538,18 +561,24 @@ func testEntityTenantIsolationGetAll(t *testing.T, h Harness) {
 func testEntityTenantIsolationDelete(t *testing.T, h Harness) {
 	tA, tB := h.NewTenant(), h.NewTenant()
 	ctxA, ctxB := tenantContext(tA), tenantContext(tB)
+	id := newID()
 
 	withTx(t, h, ctxA, func(txCtx context.Context) {
 		es, _ := h.Factory.EntityStore(txCtx)
-		_, err := es.Save(txCtx, newEntity(t, "m-tidel", "e1", map[string]any{}))
+		_, err := es.Save(txCtx, newEntity(t, "m-tidel", id, map[string]any{}))
 		require.NoError(t, err)
 	})
 
 	tmB, _ := h.Factory.TransactionManager(ctxB)
-	_, txCtxB, err := tmB.Begin(ctxB)
+	txIDB, txCtxB, err := tmB.Begin(ctxB)
 	require.NoError(t, err)
+	// Always roll back the test tx — even if Delete returns ErrNotFound
+	// (which is the expected outcome), the tx is still open and must be
+	// cleaned up. Use txCtxB so backends that embed tx-state in the
+	// context (e.g. Cassandra) can locate the transaction.
+	defer func() { _ = tmB.Rollback(txCtxB, txIDB) }()
 	esB, _ := h.Factory.EntityStore(txCtxB)
-	err = esB.Delete(txCtxB, "e1")
+	err = esB.Delete(txCtxB, id)
 	require.ErrorIs(t, err, spi.ErrNotFound, "cross-tenant Delete must return ErrNotFound")
 }
 
@@ -567,3 +596,4 @@ func testEntityEmptyTenant(t *testing.T, h Harness) {
 	require.NoError(t, err)
 	require.Equal(t, int64(0), n)
 }
+
