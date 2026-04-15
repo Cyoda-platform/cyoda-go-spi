@@ -16,6 +16,7 @@ type StoreFactory interface {
 	WorkflowStore(ctx context.Context) (WorkflowStore, error)
 	StateMachineAuditStore(ctx context.Context) (StateMachineAuditStore, error)
 	AsyncSearchStore(ctx context.Context) (AsyncSearchStore, error)
+	TransactionManager(ctx context.Context) (TransactionManager, error)
 	Close() error
 }
 
