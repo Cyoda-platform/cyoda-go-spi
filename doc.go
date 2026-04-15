@@ -85,12 +85,15 @@
 // # Startable and Close — symmetry
 //
 // Plugins with background goroutines implement the optional Startable
-// interface. The core calls Start(ctx) after HTTP handlers are
-// registered but before serving traffic. Plugins must tear down those
-// goroutines in StoreFactory.Close(): each goroutine observes either
-// ctx.Done() or a shutdown channel closed by Close(); Close() waits
-// (bounded) for them to exit with a sync.WaitGroup. Leaked goroutines
-// compound under test-driven create/destroy cycles.
+// interface. The core calls Start(ctx) immediately after NewFactory
+// and before any store-facing call (including TransactionManager), so
+// plugins whose TransactionManager depends on Start's side effects
+// (e.g. cassandra's shard-rebalance wait) can rely on the ordering.
+// Plugins must tear down those goroutines in StoreFactory.Close():
+// each goroutine observes either ctx.Done() or a shutdown channel
+// closed by Close(); Close() waits (bounded) for them to exit with a
+// sync.WaitGroup. Leaked goroutines compound under test-driven
+// create/destroy cycles.
 //
 // # Dependencies
 //
