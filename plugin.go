@@ -22,9 +22,17 @@ type DescribablePlugin interface {
 }
 
 // Startable is an optional StoreFactory capability: the core calls
-// Start after HTTP handlers are registered but before serving traffic.
-// Plugins that need background goroutines (shard managers, consumers)
-// implement this.
+// Start immediately after NewFactory and before any store-facing call
+// (including TransactionManager). Plugins that need background
+// goroutines — shard managers, consumer groups, rebalance waits,
+// long-lived cluster connections — implement this. Start must
+// complete (successfully) before the factory is expected to serve
+// transactions; plugins whose TransactionManager depends on Start's
+// side effects (rebalance-assigned shards, consumer group membership)
+// can rely on this ordering.
+//
+// Start is bounded by the caller's context (typically a startup
+// timeout). Plugins must honor ctx.Done() for cancellation.
 type Startable interface {
 	Start(ctx context.Context) error
 }
