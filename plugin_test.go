@@ -137,6 +137,25 @@ func TestFactoryOption_NoneGivesNil(t *testing.T) {
 	}
 }
 
+func TestRegisteredPlugins_SortedByName(t *testing.T) {
+	resetRegistry(t)
+	Register(&stubPlugin{name: "postgres"})
+	Register(&stubPlugin{name: "memory"})
+	Register(&stubPlugin{name: "cassandra"})
+
+	got := RegisteredPlugins()
+	want := []string{"cassandra", "memory", "postgres"}
+
+	if len(got) != len(want) {
+		t.Fatalf("length mismatch: got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: got %q, want %q (full slice: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 // Ensures the Plugin interface's NewFactory signature compiles.
 var _ = func() Plugin {
 	return (*stubPlugin)(nil)

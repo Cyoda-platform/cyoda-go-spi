@@ -3,6 +3,7 @@ package spi
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -103,7 +104,7 @@ func GetPlugin(name string) (Plugin, bool) {
 }
 
 // RegisteredPlugins returns the names of all currently registered
-// plugins, unordered.
+// plugins, sorted by name for deterministic ordering.
 func RegisteredPlugins() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
@@ -111,5 +112,6 @@ func RegisteredPlugins() []string {
 	for name := range registry {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
