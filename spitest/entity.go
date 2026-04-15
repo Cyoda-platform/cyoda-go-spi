@@ -250,7 +250,9 @@ func testEntitySaveAllAtomicity(t *testing.T, h Harness) {
 		newEntity(t, "m-saa", newID(), map[string]any{}),
 	}))
 	require.NoError(t, err)
-	require.NoError(t, tm.Rollback(ctx, txID))
+	// Use txCtx (not ctx) so backends that embed tx-state in context (e.g.
+	// Cassandra) can locate the transaction on Rollback.
+	require.NoError(t, tm.Rollback(txCtx, txID))
 
 	esOut, _ := h.Factory.EntityStore(ctx)
 	n, _ := esOut.Count(ctx, mref)
@@ -449,7 +451,11 @@ func testEntityConcurrentConflict(t *testing.T, h Harness) {
 
 	errs := make(chan error, 2)
 	run := func(v int) {
-		tm, _ := h.Factory.TransactionManager(ctx)
+		tm, e := h.Factory.TransactionManager(ctx)
+		if e != nil {
+			errs <- e
+			return
+		}
 		txID, txCtx, e := tm.Begin(ctx)
 		if e != nil {
 			errs <- e
@@ -495,7 +501,11 @@ func testEntityConcurrentDifferent(t *testing.T, h Harness) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			id := newID()
-			tm, _ := h.Factory.TransactionManager(ctx)
+			tm, e := h.Factory.TransactionManager(ctx)
+			if e != nil {
+				errs <- e
+				return
+			}
 			txID, txCtx, e := tm.Begin(ctx)
 			if e != nil {
 				errs <- e

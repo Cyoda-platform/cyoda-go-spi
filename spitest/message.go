@@ -67,7 +67,7 @@ func testMsgDeleteBatch(t *testing.T, h Harness) {
 	require.ErrorIs(t, err, spi.ErrNotFound)
 	_, _, rc, err := ms.Get(ctx, "m2")
 	require.NoError(t, err)
-	rc.Close()
+	defer rc.Close()
 }
 
 func testMsgPayloadLarge(t *testing.T, h Harness) {
@@ -91,7 +91,8 @@ func testMsgPayloadStreamClosed(t *testing.T, h Harness) {
 	_, _, rc, err := ms.Get(ctx, "m1")
 	require.NoError(t, err)
 	require.NoError(t, rc.Close())
-	require.NoError(t, rc.Close(), "double-close must be a no-op or idempotent")
+	// io.Closer does not mandate idempotent Close; we only require no panic.
+	require.NotPanics(t, func() { _ = rc.Close() }, "double-close must not panic")
 }
 
 func testMsgTenantIsolation(t *testing.T, h Harness) {

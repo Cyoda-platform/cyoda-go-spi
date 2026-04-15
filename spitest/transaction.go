@@ -109,13 +109,13 @@ func testTxSubmitTime(t *testing.T, h Harness) {
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)
 
-	before := time.Now().UTC()
+	before := h.Now().UTC()
 	txID, txCtx, err := tm.Begin(ctx)
 	require.NoError(t, err)
 	// Pass txCtx (not ctx) so backends that store tx-state in the context
 	// (e.g. Cassandra) can locate the transaction on Commit.
 	require.NoError(t, tm.Commit(txCtx, txID))
-	after := time.Now().UTC()
+	after := h.Now().UTC()
 
 	submit, err := tm.GetSubmitTime(ctx, txID)
 	require.NoError(t, err)
