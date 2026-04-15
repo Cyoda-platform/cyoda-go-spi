@@ -23,3 +23,61 @@ breaking changes may occur in minor releases.
 ## License
 
 Apache 2.0.
+
+## For Plugin Authors
+
+Every `spi.StoreFactory` implementation should run the `spitest` conformance harness to verify it meets the SPI contract.
+
+### Wiring the Harness
+
+```go
+package myplugin_test
+
+import (
+    "testing"
+    "time"
+
+    spitest "github.com/cyoda-platform/cyoda-go-spi/spitest"
+    "github.com/your-org/myplugin"
+)
+
+func TestConformance(t *testing.T) {
+    factory := myplugin.NewStoreFactory(/* ... */)
+    spitest.StoreFactoryConformance(t, spitest.Harness{
+        Factory:      factory,
+        AdvanceClock: func(d time.Duration) { time.Sleep(d) },
+    })
+}
+```
+
+### `AdvanceClock` Contract
+
+The harness calls `AdvanceClock(d time.Duration)` between writes that need distinct timestamps. After `AdvanceClock` returns, every subsequent timestamp the plugin assigns must strictly dominate every timestamp assigned before the call. `d > 0`.
+
+Plugins wire this to whatever clock mechanism they use:
+
+- **In-memory / app-side clock:** inject a `TestClock` with an `Advance(d)` method via a factory option; `AdvanceClock` calls that.
+- **DB-side clock (e.g., PostgreSQL):** use `time.Sleep(d)`. The DB's monotonic wall clock satisfies the contract; ~1–5ms gaps are sufficient.
+- **Logical clock (e.g., Cassandra HLC):** advance the physical component via a test-only hook.
+
+### `Harness.Now` (optional)
+
+If your plugin uses an injected `TestClock`, also set `Harness.Now` to the clock's `Now()` method so the harness's temporal assertions use the same clock as the plugin. Defaults to `time.Now` which matches wall-clock-based plugins (postgres).
+
+### Error-Assertion Contract
+
+The harness uses `errors.Is()` against SPI sentinels (`spi.ErrNotFound`, `spi.ErrConflict`). Plugins MUST wrap backend-native errors at the SPI boundary:
+
+```go
+// WRONG — harness will fail
+return pgx.ErrNoRows
+
+// RIGHT — harness passes
+return fmt.Errorf("entity %q: %w", id, spi.ErrNotFound)
+```
+
+### State Isolation
+
+Every subtest runs under a fresh tenant. The harness never calls `Reset`, `Truncate`, or any teardown hook. A single factory handles all subtests across different tenants. `Factory.Close()` is called once when the suite finishes.
+
+Cross-tenant leakage is caught by the explicit `TenantIsolation/*` subtests, not by infrastructure.
