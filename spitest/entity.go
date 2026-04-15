@@ -28,7 +28,13 @@ func runEntitySuite(t *testing.T, h Harness) {
 	t.Run("Count", func(t *testing.T) { testEntityCount(t, h) })
 	t.Run("JSONFidelity/DeepNesting", func(t *testing.T) { testEntityJSONFidelity(t, h) })
 
-	// Temporal group — added in Task 5; subtests not registered yet.
+	// Temporal group (Task 5)
+	t.Run("GetAsAt/Historical", func(t *testing.T) { testEntityGetAsAtHistorical(t, h) })
+	t.Run("GetAsAt/FullMetaPopulated", func(t *testing.T) { testEntityGetAsAtMeta(t, h) })
+	t.Run("GetAsAt/BeforeAnyWrite", func(t *testing.T) { testEntityGetAsAtBefore(t, h) })
+	t.Run("GetAllAsAt", func(t *testing.T) { testEntityGetAllAsAt(t, h) })
+	t.Run("GetVersionHistory/Ordering", func(t *testing.T) { testEntityVersionHistory(t, h) })
+
 	// Concurrent / Isolation group — added in Task 6; subtests not registered yet.
 }
 
@@ -269,4 +275,105 @@ func testEntityJSONFidelity(t *testing.T, h Harness) {
 	var roundTripped map[string]any
 	require.NoError(t, json.Unmarshal(got.Data, &roundTripped))
 	require.Equal(t, payload, roundTripped, "deep JSON payload must round-trip")
+}
+
+func testEntityGetAsAtHistorical(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	// Write v=1, advance, capture tBetween12, advance, write v=2, advance.
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-asat", "e1", map[string]any{"v": 1}))
+		require.NoError(t, err)
+	})
+	h.AdvanceClock(1 * time.Millisecond)
+	tBetween12 := time.Now().UTC()
+	h.AdvanceClock(1 * time.Millisecond)
+
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-asat", "e1", map[string]any{"v": 2}))
+		require.NoError(t, err)
+	})
+	h.AdvanceClock(1 * time.Millisecond)
+
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.GetAsAt(ctx, "e1", tBetween12)
+	require.NoError(t, err)
+	require.Contains(t, string(got.Data), `"v":1`, "GetAsAt(tBetween12) must return v=1")
+}
+
+func testEntityGetAsAtMeta(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-meta", "e1", map[string]any{}))
+		require.NoError(t, err)
+	})
+	h.AdvanceClock(1 * time.Millisecond)
+	asAt := time.Now().UTC()
+	h.AdvanceClock(1 * time.Millisecond)
+
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.GetAsAt(ctx, "e1", asAt)
+	require.NoError(t, err)
+	// State intentionally not asserted (see testEntityCreateAndGet).
+	require.False(t, got.Meta.CreationDate.IsZero(), "GetAsAt must populate CreationDate")
+	require.False(t, got.Meta.LastModifiedDate.IsZero(), "GetAsAt must populate LastModifiedDate")
+	require.NotEmpty(t, got.Meta.TransactionID, "GetAsAt must populate TransactionID")
+	require.Equal(t, "e1", got.Meta.ID)
+}
+
+func testEntityGetAsAtBefore(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	past := time.Now().UTC().Add(-1 * time.Hour)
+	es, _ := h.Factory.EntityStore(ctx)
+	_, err := es.GetAsAt(ctx, "never-written", past)
+	require.ErrorIs(t, err, spi.ErrNotFound)
+}
+
+func testEntityGetAllAsAt(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	mref := spi.ModelRef{EntityName: "m-allasat", ModelVersion: "1"}
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		for i := 0; i < 3; i++ {
+			_, err := es.Save(txCtx, newEntity(t, "m-allasat", fmt.Sprintf("e%d", i), map[string]any{"i": i}))
+			require.NoError(t, err)
+		}
+	})
+	h.AdvanceClock(1 * time.Millisecond)
+	asAt := time.Now().UTC()
+	h.AdvanceClock(1 * time.Millisecond)
+
+	// Fourth entity written AFTER asAt — must not be returned.
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-allasat", "e-future", map[string]any{"i": 99}))
+		require.NoError(t, err)
+	})
+
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.GetAllAsAt(ctx, mref, asAt)
+	require.NoError(t, err)
+	require.Len(t, got, 3, "GetAllAsAt must exclude writes after asAt")
+}
+
+func testEntityVersionHistory(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	for i := 0; i < 3; i++ {
+		withTx(t, h, ctx, func(txCtx context.Context) {
+			es, _ := h.Factory.EntityStore(txCtx)
+			_, err := es.Save(txCtx, newEntity(t, "m-hist", "e1", map[string]any{"v": i}))
+			require.NoError(t, err)
+		})
+		h.AdvanceClock(1 * time.Millisecond)
+	}
+	es, _ := h.Factory.EntityStore(ctx)
+	history, err := es.GetVersionHistory(ctx, "e1")
+	require.NoError(t, err)
+	require.Len(t, history, 3)
+	for i := 1; i < len(history); i++ {
+		require.False(t, history[i].Timestamp.Before(history[i-1].Timestamp),
+			"version %d timestamp must not precede version %d", i, i-1)
+	}
 }
