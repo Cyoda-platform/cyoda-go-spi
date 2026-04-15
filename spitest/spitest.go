@@ -75,7 +75,4 @@ func mustBeSet(t *testing.T, cond bool, msg string) {
 	}
 }
 
-func runMessageSuite(t *testing.T, h Harness)     { t.Skip("not implemented yet") }
-func runWorkflowSuite(t *testing.T, h Harness)    { t.Skip("not implemented yet") }
-func runAuditSuite(t *testing.T, h Harness)       { t.Skip("not implemented yet") }
 func runAsyncSearchSuite(t *testing.T, h Harness) { t.Skip("not implemented yet") }
