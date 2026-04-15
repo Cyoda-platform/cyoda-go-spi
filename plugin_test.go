@@ -3,6 +3,7 @@ package spi
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -55,8 +56,19 @@ func TestRegister_DuplicatePanics(t *testing.T) {
 	resetRegistry(t)
 	Register(&stubPlugin{name: "memory"})
 	defer func() {
-		if r := recover(); r == nil {
+		r := recover()
+		if r == nil {
 			t.Fatal("expected panic on duplicate Register, got none")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		if !strings.Contains(msg, `"memory"`) {
+			t.Errorf("panic message should contain the plugin name: %q", msg)
+		}
+		if !strings.Contains(msg, "blank imports") {
+			t.Errorf("panic message should mention blank imports: %q", msg)
 		}
 	}()
 	Register(&stubPlugin{name: "memory"})

@@ -90,7 +90,11 @@ func Register(p Plugin) {
 	defer registryMu.Unlock()
 	name := p.Name()
 	if _, dup := registry[name]; dup {
-		panic(fmt.Sprintf("spi: Register called twice for plugin %q", name))
+		panic(fmt.Sprintf(
+			"cyoda-go-spi: two storage plugins registered with the name %q. "+
+				"Check the blank imports in your main package — a binary must "+
+				"include exactly one plugin per name.",
+			name))
 	}
 	registry[name] = p
 }
