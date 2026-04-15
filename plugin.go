@@ -10,7 +10,7 @@ import (
 // themselves at init time by calling Register.
 type Plugin interface {
 	Name() string
-	NewFactory(getenv func(string) string, opts ...FactoryOption) (StoreFactory, error)
+	NewFactory(ctx context.Context, getenv func(string) string, opts ...FactoryOption) (StoreFactory, error)
 }
 
 // DescribablePlugin is an optional Plugin capability: it exposes the

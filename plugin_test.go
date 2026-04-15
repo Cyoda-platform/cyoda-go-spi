@@ -11,7 +11,7 @@ import (
 type stubPlugin struct{ name string }
 
 func (s *stubPlugin) Name() string { return s.name }
-func (s *stubPlugin) NewFactory(getenv func(string) string, opts ...FactoryOption) (StoreFactory, error) {
+func (s *stubPlugin) NewFactory(ctx context.Context, getenv func(string) string, opts ...FactoryOption) (StoreFactory, error) {
 	return nil, fmt.Errorf("stub")
 }
 
