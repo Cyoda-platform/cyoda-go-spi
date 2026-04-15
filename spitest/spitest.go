@@ -75,4 +75,3 @@ func mustBeSet(t *testing.T, cond bool, msg string) {
 	}
 }
 
-func runAsyncSearchSuite(t *testing.T, h Harness) { t.Skip("not implemented yet") }
