@@ -75,7 +75,6 @@ func mustBeSet(t *testing.T, cond bool, msg string) {
 	}
 }
 
-func runEntitySuite(t *testing.T, h Harness)      { t.Skip("not implemented yet") }
 func runModelSuite(t *testing.T, h Harness)       { t.Skip("not implemented yet") }
 func runKeyValueSuite(t *testing.T, h Harness)    { t.Skip("not implemented yet") }
 func runMessageSuite(t *testing.T, h Harness)     { t.Skip("not implemented yet") }
