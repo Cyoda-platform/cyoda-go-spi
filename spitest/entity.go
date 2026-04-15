@@ -3,6 +3,7 @@ package spitest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -35,7 +36,15 @@ func runEntitySuite(t *testing.T, h Harness) {
 	t.Run("GetAllAsAt", func(t *testing.T) { testEntityGetAllAsAt(t, h) })
 	t.Run("GetVersionHistory/Ordering", func(t *testing.T) { testEntityVersionHistory(t, h) })
 
-	// Concurrent / Isolation group — added in Task 6; subtests not registered yet.
+	// Concurrent / Isolation group (Task 6)
+	t.Run("CompareAndSave/Success", func(t *testing.T) { testEntityCompareAndSaveSuccess(t, h) })
+	t.Run("CompareAndSave/Conflict", func(t *testing.T) { testEntityCompareAndSaveConflict(t, h) })
+	t.Run("Concurrent/ConflictingUpdate", func(t *testing.T) { testEntityConcurrentConflict(t, h) })
+	t.Run("Concurrent/DifferentEntities", func(t *testing.T) { testEntityConcurrentDifferent(t, h) })
+	t.Run("TenantIsolation/Get", func(t *testing.T) { testEntityTenantIsolationGet(t, h) })
+	t.Run("TenantIsolation/GetAll", func(t *testing.T) { testEntityTenantIsolationGetAll(t, h) })
+	t.Run("TenantIsolation/Delete", func(t *testing.T) { testEntityTenantIsolationDelete(t, h) })
+	t.Run("EmptyTenant", func(t *testing.T) { testEntityEmptyTenant(t, h) })
 }
 
 func testEntityCreateAndGet(t *testing.T, h Harness) {
@@ -376,4 +385,190 @@ func testEntityVersionHistory(t *testing.T, h Harness) {
 		require.False(t, history[i].Timestamp.Before(history[i-1].Timestamp),
 			"version %d timestamp must not precede version %d", i, i-1)
 	}
+}
+
+func testEntityCompareAndSaveSuccess(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-cas", "e1", map[string]any{"v": 1}))
+		require.NoError(t, err)
+	})
+
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.Get(ctx, "e1")
+	require.NoError(t, err)
+	firstTxID := got.Meta.TransactionID
+
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.CompareAndSave(txCtx, newEntity(t, "m-cas", "e1", map[string]any{"v": 2}), firstTxID)
+		require.NoError(t, err)
+	})
+
+	got, err = es.Get(ctx, "e1")
+	require.NoError(t, err)
+	require.Contains(t, string(got.Data), `"v":2`)
+}
+
+func testEntityCompareAndSaveConflict(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-cas", "e1", map[string]any{}))
+		require.NoError(t, err)
+	})
+
+	tm, _ := h.Factory.TransactionManager(ctx)
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tm.Rollback(ctx, txID) }()
+	es, _ := h.Factory.EntityStore(txCtx)
+	_, err = es.CompareAndSave(txCtx, newEntity(t, "m-cas", "e1", map[string]any{}), "stale-tx-id")
+	require.ErrorIs(t, err, spi.ErrConflict, "CompareAndSave with stale expectedTxID must return ErrConflict")
+}
+
+func testEntityConcurrentConflict(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-cc", "e1", map[string]any{"v": 0}))
+		require.NoError(t, err)
+	})
+	es0, _ := h.Factory.EntityStore(ctx)
+	got, _ := es0.Get(ctx, "e1")
+	baseTxID := got.Meta.TransactionID
+
+	errs := make(chan error, 2)
+	run := func(v int) {
+		tm, _ := h.Factory.TransactionManager(ctx)
+		txID, txCtx, e := tm.Begin(ctx)
+		if e != nil {
+			errs <- e
+			return
+		}
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, e = es.CompareAndSave(txCtx, newEntity(t, "m-cc", "e1", map[string]any{"v": v}), baseTxID)
+		if e != nil {
+			_ = tm.Rollback(ctx, txID)
+			errs <- e
+			return
+		}
+		errs <- tm.Commit(ctx, txID)
+	}
+	go run(1)
+	go run(2)
+	results := []error{<-errs, <-errs}
+
+	var winners, conflicts int
+	for _, e := range results {
+		switch {
+		case e == nil:
+			winners++
+		case errors.Is(e, spi.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected error: %v", e)
+		}
+	}
+	require.Equal(t, 1, winners, "exactly one winner")
+	require.Equal(t, 1, conflicts, "exactly one ErrConflict")
+}
+
+func testEntityConcurrentDifferent(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	mref := spi.ModelRef{EntityName: "m-cd", ModelVersion: "1"}
+	const n = 8
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			tm, _ := h.Factory.TransactionManager(ctx)
+			txID, txCtx, e := tm.Begin(ctx)
+			if e != nil {
+				errs <- e
+				return
+			}
+			es, _ := h.Factory.EntityStore(txCtx)
+			_, e = es.Save(txCtx, newEntity(t, "m-cd", fmt.Sprintf("e%d", i), map[string]any{"i": i}))
+			if e != nil {
+				_ = tm.Rollback(ctx, txID)
+				errs <- e
+				return
+			}
+			errs <- tm.Commit(ctx, txID)
+		}(i)
+	}
+	for i := 0; i < n; i++ {
+		require.NoError(t, <-errs)
+	}
+	es, _ := h.Factory.EntityStore(ctx)
+	count, err := es.Count(ctx, mref)
+	require.NoError(t, err)
+	require.Equal(t, int64(n), count)
+}
+
+func testEntityTenantIsolationGet(t *testing.T, h Harness) {
+	tA := h.NewTenant()
+	tB := h.NewTenant()
+	ctxA, ctxB := tenantContext(tA), tenantContext(tB)
+
+	withTx(t, h, ctxA, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-ti", "e1", map[string]any{"t": "A"}))
+		require.NoError(t, err)
+	})
+
+	esB, _ := h.Factory.EntityStore(ctxB)
+	_, err := esB.Get(ctxB, "e1")
+	require.ErrorIs(t, err, spi.ErrNotFound, "cross-tenant Get must return ErrNotFound")
+}
+
+func testEntityTenantIsolationGetAll(t *testing.T, h Harness) {
+	tA, tB := h.NewTenant(), h.NewTenant()
+	ctxA, ctxB := tenantContext(tA), tenantContext(tB)
+	mref := spi.ModelRef{EntityName: "m-tigetall", ModelVersion: "1"}
+
+	withTx(t, h, ctxA, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-tigetall", "e1", map[string]any{}))
+		require.NoError(t, err)
+	})
+
+	esB, _ := h.Factory.EntityStore(ctxB)
+	got, err := esB.GetAll(ctxB, mref)
+	require.NoError(t, err)
+	require.Len(t, got, 0, "tenant B must not see tenant A's writes")
+}
+
+func testEntityTenantIsolationDelete(t *testing.T, h Harness) {
+	tA, tB := h.NewTenant(), h.NewTenant()
+	ctxA, ctxB := tenantContext(tA), tenantContext(tB)
+
+	withTx(t, h, ctxA, func(txCtx context.Context) {
+		es, _ := h.Factory.EntityStore(txCtx)
+		_, err := es.Save(txCtx, newEntity(t, "m-tidel", "e1", map[string]any{}))
+		require.NoError(t, err)
+	})
+
+	tmB, _ := h.Factory.TransactionManager(ctxB)
+	_, txCtxB, err := tmB.Begin(ctxB)
+	require.NoError(t, err)
+	esB, _ := h.Factory.EntityStore(txCtxB)
+	err = esB.Delete(txCtxB, "e1")
+	require.ErrorIs(t, err, spi.ErrNotFound, "cross-tenant Delete must return ErrNotFound")
+}
+
+func testEntityEmptyTenant(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	mref := spi.ModelRef{EntityName: "m-empty", ModelVersion: "1"}
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.GetAll(ctx, mref)
+	require.NoError(t, err)
+	// Note: testEntityGetAllEmpty asserts non-nil; this subtest tests the
+	// broader EmptyTenant invariant (Count == 0). If the memory plugin
+	// returns nil from GetAll, this still works because len(nil) == 0.
+	require.Len(t, got, 0)
+	n, err := es.Count(ctx, mref)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), n)
 }
