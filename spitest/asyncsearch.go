@@ -133,7 +133,7 @@ func testASReapExpired(t *testing.T, h Harness) {
 	// Move the job to a terminal state so ReapExpired considers it eligible.
 	// Running jobs are intentionally skipped by the reaper (they may still
 	// have live goroutines writing results).
-	finishTime := time.Now().UTC()
+	finishTime := h.Now().UTC()
 	require.NoError(t, as.UpdateJobStatus(ctx, "j1", "SUCCESSFUL", 0, "", finishTime, 0))
 
 	ttl := 10 * time.Millisecond

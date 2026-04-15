@@ -24,6 +24,11 @@ type Harness struct {
 	// before the call. d must be > 0; d <= 0 panics.
 	AdvanceClock func(d time.Duration)
 
+	// Now returns the plugin's current clock time. Temporal tests use this
+	// to capture "asAt" markers that are consistent with the plugin's clock.
+	// Optional; defaults to time.Now.
+	Now func() time.Time
+
 	// NewTenant returns a fresh tenant ID unique within this process.
 	// The harness invokes this at the start of every subtest; no subtest
 	// reuses another's tenant. Optional; defaults to a uuid-based generator.
@@ -36,6 +41,9 @@ func StoreFactoryConformance(t *testing.T, h Harness) {
 	t.Helper()
 	mustBeSet(t, h.Factory != nil, "Harness.Factory must be set")
 	mustBeSet(t, h.AdvanceClock != nil, "Harness.AdvanceClock must be set")
+	if h.Now == nil {
+		h.Now = time.Now
+	}
 	if h.NewTenant == nil {
 		h.NewTenant = defaultNewTenant
 	}

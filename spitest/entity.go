@@ -106,11 +106,6 @@ func testEntityGetAllEmpty(t *testing.T, h Harness) {
 	es, _ := h.Factory.EntityStore(ctx)
 	got, err := es.GetAll(ctx, spi.ModelRef{EntityName: "m-empty", ModelVersion: "1"})
 	require.NoError(t, err)
-	// TODO(plugin-bug): memory plugin returns nil instead of an empty non-nil slice from GetAll.
-	// The SPI contract requires GetAll to return a non-nil (possibly empty) slice.
-	if got == nil {
-		t.Skip("pending plugin bug: memory plugin returns nil slice from GetAll on empty model")
-	}
 	require.NotNil(t, got, "GetAll on empty model must return non-nil slice")
 	require.Len(t, got, 0)
 }
@@ -295,7 +290,7 @@ func testEntityGetAsAtHistorical(t *testing.T, h Harness) {
 		require.NoError(t, err)
 	})
 	h.AdvanceClock(1 * time.Millisecond)
-	tBetween12 := time.Now().UTC()
+	tBetween12 := h.Now().UTC()
 	h.AdvanceClock(1 * time.Millisecond)
 
 	withTx(t, h, ctx, func(txCtx context.Context) {
@@ -319,7 +314,7 @@ func testEntityGetAsAtMeta(t *testing.T, h Harness) {
 		require.NoError(t, err)
 	})
 	h.AdvanceClock(1 * time.Millisecond)
-	asAt := time.Now().UTC()
+	asAt := h.Now().UTC()
 	h.AdvanceClock(1 * time.Millisecond)
 
 	es, _ := h.Factory.EntityStore(ctx)
@@ -334,7 +329,7 @@ func testEntityGetAsAtMeta(t *testing.T, h Harness) {
 
 func testEntityGetAsAtBefore(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
-	past := time.Now().UTC().Add(-1 * time.Hour)
+	past := h.Now().UTC().Add(-1 * time.Hour)
 	es, _ := h.Factory.EntityStore(ctx)
 	_, err := es.GetAsAt(ctx, "never-written", past)
 	require.ErrorIs(t, err, spi.ErrNotFound)
@@ -351,7 +346,7 @@ func testEntityGetAllAsAt(t *testing.T, h Harness) {
 		}
 	})
 	h.AdvanceClock(1 * time.Millisecond)
-	asAt := time.Now().UTC()
+	asAt := h.Now().UTC()
 	h.AdvanceClock(1 * time.Millisecond)
 
 	// Fourth entity written AFTER asAt — must not be returned.
