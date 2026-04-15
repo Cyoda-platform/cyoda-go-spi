@@ -2,6 +2,8 @@ package spitest
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,20 +36,77 @@ type Harness struct {
 	// reuses another's tenant. Optional; defaults to a uuid-based generator.
 	NewTenant func() spi.TenantID
 
-	// Skip is an optional map from subtest name to skip reason.
-	// When a subtest's name matches a key, the harness calls t.Skip(reason)
-	// at the start of that subtest. Use the leaf name (e.g. "Join"), not the
-	// full path. Backends with known structural incompatibilities populate this
-	// to prevent false failures while documenting the open issues.
+	// Skip is an optional map from subtest path suffix to skip reason.
+	// Keys must be the path below the root test name, e.g.:
+	//
+	//   "Transaction/Join"
+	//   "Entity/CompareAndSave/Conflict"
+	//   "AsyncSearch/UpdateStatus/Succeeded"
+	//   "AsyncSearch/SaveAndGetResults/Pagination"
+	//   "AsyncSearch/Cancel"
+	//   "AsyncSearch/ReapExpired"
+	//
+	// When a running subtest's name (stripped of the root prefix) matches a
+	// key, the harness calls t.Skipf(reason) at the start of that subtest.
+	// Backends with known structural incompatibilities populate this to
+	// prevent false failures while documenting the open issues.
+	//
+	// StoreFactoryConformance fails the test if any key in Skip was never
+	// matched — this catches typos in key names.
 	Skip map[string]string
 }
 
-// skipIfRegistered calls t.Skip if the subtest name appears in h.Skip.
-func (h Harness) skipIfRegistered(t *testing.T, name string) {
-	t.Helper()
-	if reason, ok := h.Skip[name]; ok {
-		t.Skip(reason)
+// skipTracker is a run-scoped set of which Skip keys were actually hit.
+// It is populated by runSubtest / skipIfRegistered and validated at the
+// end of StoreFactoryConformance.
+type skipTracker struct {
+	mu   sync.Mutex
+	used map[string]bool
+}
+
+func newSkipTracker() *skipTracker { return &skipTracker{used: make(map[string]bool)} }
+
+func (st *skipTracker) record(key string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.used[key] = true
+}
+
+func (st *skipTracker) unusedKeys(skip map[string]string) []string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var out []string
+	for k := range skip {
+		if !st.used[k] {
+			out = append(out, k)
+		}
 	}
+	return out
+}
+
+// skipIfRegistered calls t.Skipf if the current subtest's path suffix
+// appears in h.Skip. The suffix is t.Name() with the root test prefix
+// (everything up to and including the first '/') stripped.
+func skipIfRegistered(t *testing.T, h Harness, tracker *skipTracker) {
+	t.Helper()
+	name := t.Name()
+	if idx := strings.Index(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	if reason, ok := h.Skip[name]; ok {
+		tracker.record(name)
+		t.Skipf("skipped by plugin: %s", reason)
+	}
+}
+
+// runSubtest wraps t.Run so every subtest automatically receives a skip
+// check before fn runs. This replaces per-subtest skipIfRegistered calls.
+func runSubtest(t *testing.T, h Harness, tracker *skipTracker, name string, fn func(*testing.T, Harness)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		skipIfRegistered(t, h, tracker)
+		fn(t, h)
+	})
 }
 
 // StoreFactoryConformance runs the full conformance suite against h.
@@ -64,14 +123,24 @@ func StoreFactoryConformance(t *testing.T, h Harness) {
 	}
 	t.Cleanup(func() { _ = h.Factory.Close() })
 
-	t.Run("Transaction", func(t *testing.T) { runTransactionSuite(t, h) })
-	t.Run("Entity", func(t *testing.T) { runEntitySuite(t, h) })
-	t.Run("Model", func(t *testing.T) { runModelSuite(t, h) })
-	t.Run("KeyValue", func(t *testing.T) { runKeyValueSuite(t, h) })
-	t.Run("Message", func(t *testing.T) { runMessageSuite(t, h) })
-	t.Run("Workflow", func(t *testing.T) { runWorkflowSuite(t, h) })
-	t.Run("Audit", func(t *testing.T) { runAuditSuite(t, h) })
-	t.Run("AsyncSearch", func(t *testing.T) { runAsyncSearchSuite(t, h) })
+	tracker := newSkipTracker()
+
+	// Validate that every registered Skip key was actually hit during the run.
+	// Unmatched keys indicate typos or stale entries.
+	t.Cleanup(func() {
+		for _, key := range tracker.unusedKeys(h.Skip) {
+			t.Errorf("Harness.Skip key %q was never matched — possible typo or stale entry", key)
+		}
+	})
+
+	t.Run("Transaction", func(t *testing.T) { runTransactionSuite(t, h, tracker) })
+	t.Run("Entity", func(t *testing.T) { runEntitySuite(t, h, tracker) })
+	t.Run("Model", func(t *testing.T) { runModelSuite(t, h, tracker) })
+	t.Run("KeyValue", func(t *testing.T) { runKeyValueSuite(t, h, tracker) })
+	t.Run("Message", func(t *testing.T) { runMessageSuite(t, h, tracker) })
+	t.Run("Workflow", func(t *testing.T) { runWorkflowSuite(t, h, tracker) })
+	t.Run("Audit", func(t *testing.T) { runAuditSuite(t, h, tracker) })
+	t.Run("AsyncSearch", func(t *testing.T) { runAsyncSearchSuite(t, h, tracker) })
 }
 
 func defaultNewTenant() spi.TenantID {
@@ -97,4 +166,3 @@ func mustBeSet(t *testing.T, cond bool, msg string) {
 		t.Fatal(msg)
 	}
 }
-

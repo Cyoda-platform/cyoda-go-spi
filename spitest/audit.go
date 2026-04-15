@@ -9,12 +9,12 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runAuditSuite(t *testing.T, h Harness) {
-	t.Run("RecordAndGet", func(t *testing.T) { testAuditRecordAndGet(t, h) })
-	t.Run("GetEvents/Ordering", func(t *testing.T) { testAuditGetEventsOrdering(t, h) })
-	t.Run("GetEvents/NotFound", func(t *testing.T) { testAuditGetEventsNotFound(t, h) })
-	t.Run("GetEventsByTransaction", func(t *testing.T) { testAuditGetByTx(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testAuditTenantIsolation(t, h) })
+func runAuditSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "RecordAndGet", testAuditRecordAndGet)
+	runSubtest(t, h, tracker, "GetEvents/Ordering", testAuditGetEventsOrdering)
+	runSubtest(t, h, tracker, "GetEvents/NotFound", testAuditGetEventsNotFound)
+	runSubtest(t, h, tracker, "GetEventsByTransaction", testAuditGetByTx)
+	runSubtest(t, h, tracker, "TenantIsolation", testAuditTenantIsolation)
 }
 
 func newSMEvent(txID, state, details string) spi.StateMachineEvent {

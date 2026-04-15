@@ -11,14 +11,14 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runMessageSuite(t *testing.T, h Harness) {
-	t.Run("SaveAndGet", func(t *testing.T) { testMsgSaveAndGet(t, h) })
-	t.Run("Get/NotFound", func(t *testing.T) { testMsgGetNotFound(t, h) })
-	t.Run("Delete", func(t *testing.T) { testMsgDelete(t, h) })
-	t.Run("DeleteBatch", func(t *testing.T) { testMsgDeleteBatch(t, h) })
-	t.Run("Payload/Large", func(t *testing.T) { testMsgPayloadLarge(t, h) })
-	t.Run("Payload/StreamClosed", func(t *testing.T) { testMsgPayloadStreamClosed(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testMsgTenantIsolation(t, h) })
+func runMessageSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "SaveAndGet", testMsgSaveAndGet)
+	runSubtest(t, h, tracker, "Get/NotFound", testMsgGetNotFound)
+	runSubtest(t, h, tracker, "Delete", testMsgDelete)
+	runSubtest(t, h, tracker, "DeleteBatch", testMsgDeleteBatch)
+	runSubtest(t, h, tracker, "Payload/Large", testMsgPayloadLarge)
+	runSubtest(t, h, tracker, "Payload/StreamClosed", testMsgPayloadStreamClosed)
+	runSubtest(t, h, tracker, "TenantIsolation", testMsgTenantIsolation)
 }
 
 func testMsgSaveAndGet(t *testing.T, h Harness) {

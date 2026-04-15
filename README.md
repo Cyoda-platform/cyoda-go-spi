@@ -81,3 +81,18 @@ return fmt.Errorf("entity %q: %w", id, spi.ErrNotFound)
 Every subtest runs under a fresh tenant. The harness never calls `Reset`, `Truncate`, or any teardown hook. A single factory handles all subtests across different tenants. `Factory.Close()` is called once when the suite finishes.
 
 Cross-tenant leakage is caught by the explicit `TenantIsolation/*` subtests, not by infrastructure.
+
+### Known Limitations / Harness.Skip
+
+Backends with structural incompatibilities can register documented skips via `Harness.Skip`. The key is the subtest path **below** the root test name (the part after the first `/`). Mistyped keys cause the suite to fail with an "unused skip key" error, preventing stale entries from silently accumulating.
+
+```go
+spitest.StoreFactoryConformance(t, spitest.Harness{
+    Factory:      factory,
+    AdvanceClock: testClock.Advance,
+    Skip: map[string]string{
+        "Transaction/Join":                        "pending #42: Join does not share write-set",
+        "AsyncSearch/SaveAndGetResults/Pagination": "pending #43: SaveResults not yet implemented",
+    },
+})
+```

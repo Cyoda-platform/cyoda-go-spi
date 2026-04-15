@@ -8,17 +8,17 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runModelSuite(t *testing.T, h Harness) {
-	t.Run("SaveAndGet", func(t *testing.T) { testModelSaveAndGet(t, h) })
-	t.Run("GetAll/EmptyTenant", func(t *testing.T) { testModelGetAllEmpty(t, h) })
-	t.Run("GetAll/MultipleModels", func(t *testing.T) { testModelGetAllMultiple(t, h) })
-	t.Run("Delete", func(t *testing.T) { testModelDelete(t, h) })
-	t.Run("Delete/NotFound", func(t *testing.T) { testModelDeleteNotFound(t, h) })
-	t.Run("Lock/UnlockRoundTrip", func(t *testing.T) { testModelLockUnlock(t, h) })
-	t.Run("IsLocked/ReflectsState", func(t *testing.T) { testModelIsLocked(t, h) })
-	t.Run("Lock/Idempotent", func(t *testing.T) { testModelLockIdempotent(t, h) })
-	t.Run("SetChangeLevel", func(t *testing.T) { testModelSetChangeLevel(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testModelTenantIsolation(t, h) })
+func runModelSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "SaveAndGet", testModelSaveAndGet)
+	runSubtest(t, h, tracker, "GetAll/EmptyTenant", testModelGetAllEmpty)
+	runSubtest(t, h, tracker, "GetAll/MultipleModels", testModelGetAllMultiple)
+	runSubtest(t, h, tracker, "Delete", testModelDelete)
+	runSubtest(t, h, tracker, "Delete/NotFound", testModelDeleteNotFound)
+	runSubtest(t, h, tracker, "Lock/UnlockRoundTrip", testModelLockUnlock)
+	runSubtest(t, h, tracker, "IsLocked/ReflectsState", testModelIsLocked)
+	runSubtest(t, h, tracker, "Lock/Idempotent", testModelLockIdempotent)
+	runSubtest(t, h, tracker, "SetChangeLevel", testModelSetChangeLevel)
+	runSubtest(t, h, tracker, "TenantIsolation", testModelTenantIsolation)
 }
 
 func newModelDescriptor(name, version string) *spi.ModelDescriptor {

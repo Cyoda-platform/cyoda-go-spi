@@ -8,12 +8,12 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runWorkflowSuite(t *testing.T, h Harness) {
-	t.Run("SaveAndGet", func(t *testing.T) { testWfSaveAndGet(t, h) })
-	t.Run("Get/EmptyModel", func(t *testing.T) { testWfGetEmpty(t, h) })
-	t.Run("Overwrite", func(t *testing.T) { testWfOverwrite(t, h) })
-	t.Run("Delete", func(t *testing.T) { testWfDelete(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testWfTenantIsolation(t, h) })
+func runWorkflowSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "SaveAndGet", testWfSaveAndGet)
+	runSubtest(t, h, tracker, "Get/EmptyModel", testWfGetEmpty)
+	runSubtest(t, h, tracker, "Overwrite", testWfOverwrite)
+	runSubtest(t, h, tracker, "Delete", testWfDelete)
+	runSubtest(t, h, tracker, "TenantIsolation", testWfTenantIsolation)
 }
 
 func newWorkflowDef(name string) spi.WorkflowDefinition {

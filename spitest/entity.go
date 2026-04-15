@@ -12,38 +12,38 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runEntitySuite(t *testing.T, h Harness) {
+func runEntitySuite(t *testing.T, h Harness, tracker *skipTracker) {
 	// CRUD group (Task 4)
-	t.Run("CreateAndGet", func(t *testing.T) { testEntityCreateAndGet(t, h) })
-	t.Run("Update", func(t *testing.T) { testEntityUpdate(t, h) })
-	t.Run("SaveAll/Ordering", func(t *testing.T) { testEntitySaveAllOrdering(t, h) })
-	t.Run("SaveAll/PartialFailureAtomicity", func(t *testing.T) { testEntitySaveAllAtomicity(t, h) })
-	t.Run("Get/NotFound", func(t *testing.T) { testEntityGetNotFound(t, h) })
-	t.Run("GetAll/EmptyModel", func(t *testing.T) { testEntityGetAllEmpty(t, h) })
-	t.Run("GetAll/Population", func(t *testing.T) { testEntityGetAllPopulation(t, h) })
-	t.Run("Delete", func(t *testing.T) { testEntityDelete(t, h) })
-	t.Run("Delete/NotFound", func(t *testing.T) { testEntityDeleteNotFound(t, h) })
-	t.Run("DeleteAll", func(t *testing.T) { testEntityDeleteAll(t, h) })
-	t.Run("Exists", func(t *testing.T) { testEntityExists(t, h) })
-	t.Run("Count", func(t *testing.T) { testEntityCount(t, h) })
-	t.Run("JSONFidelity/DeepNesting", func(t *testing.T) { testEntityJSONFidelity(t, h) })
+	runSubtest(t, h, tracker, "CreateAndGet", testEntityCreateAndGet)
+	runSubtest(t, h, tracker, "Update", testEntityUpdate)
+	runSubtest(t, h, tracker, "SaveAll/Ordering", testEntitySaveAllOrdering)
+	runSubtest(t, h, tracker, "SaveAll/PartialFailureAtomicity", testEntitySaveAllAtomicity)
+	runSubtest(t, h, tracker, "Get/NotFound", testEntityGetNotFound)
+	runSubtest(t, h, tracker, "GetAll/EmptyModel", testEntityGetAllEmpty)
+	runSubtest(t, h, tracker, "GetAll/Population", testEntityGetAllPopulation)
+	runSubtest(t, h, tracker, "Delete", testEntityDelete)
+	runSubtest(t, h, tracker, "Delete/NotFound", testEntityDeleteNotFound)
+	runSubtest(t, h, tracker, "DeleteAll", testEntityDeleteAll)
+	runSubtest(t, h, tracker, "Exists", testEntityExists)
+	runSubtest(t, h, tracker, "Count", testEntityCount)
+	runSubtest(t, h, tracker, "JSONFidelity/DeepNesting", testEntityJSONFidelity)
 
 	// Temporal group (Task 5)
-	t.Run("GetAsAt/Historical", func(t *testing.T) { testEntityGetAsAtHistorical(t, h) })
-	t.Run("GetAsAt/FullMetaPopulated", func(t *testing.T) { testEntityGetAsAtMeta(t, h) })
-	t.Run("GetAsAt/BeforeAnyWrite", func(t *testing.T) { testEntityGetAsAtBefore(t, h) })
-	t.Run("GetAllAsAt", func(t *testing.T) { testEntityGetAllAsAt(t, h) })
-	t.Run("GetVersionHistory/Ordering", func(t *testing.T) { testEntityVersionHistory(t, h) })
+	runSubtest(t, h, tracker, "GetAsAt/Historical", testEntityGetAsAtHistorical)
+	runSubtest(t, h, tracker, "GetAsAt/FullMetaPopulated", testEntityGetAsAtMeta)
+	runSubtest(t, h, tracker, "GetAsAt/BeforeAnyWrite", testEntityGetAsAtBefore)
+	runSubtest(t, h, tracker, "GetAllAsAt", testEntityGetAllAsAt)
+	runSubtest(t, h, tracker, "GetVersionHistory/Ordering", testEntityVersionHistory)
 
 	// Concurrent / Isolation group (Task 6)
-	t.Run("CompareAndSave/Success", func(t *testing.T) { testEntityCompareAndSaveSuccess(t, h) })
-	t.Run("CompareAndSave/Conflict", func(t *testing.T) { testEntityCompareAndSaveConflict(t, h) })
-	t.Run("Concurrent/ConflictingUpdate", func(t *testing.T) { testEntityConcurrentConflict(t, h) })
-	t.Run("Concurrent/DifferentEntities", func(t *testing.T) { testEntityConcurrentDifferent(t, h) })
-	t.Run("TenantIsolation/Get", func(t *testing.T) { testEntityTenantIsolationGet(t, h) })
-	t.Run("TenantIsolation/GetAll", func(t *testing.T) { testEntityTenantIsolationGetAll(t, h) })
-	t.Run("TenantIsolation/Delete", func(t *testing.T) { testEntityTenantIsolationDelete(t, h) })
-	t.Run("EmptyTenant", func(t *testing.T) { testEntityEmptyTenant(t, h) })
+	runSubtest(t, h, tracker, "CompareAndSave/Success", testEntityCompareAndSaveSuccess)
+	runSubtest(t, h, tracker, "CompareAndSave/Conflict", testEntityCompareAndSaveConflict)
+	runSubtest(t, h, tracker, "Concurrent/ConflictingUpdate", testEntityConcurrentConflict)
+	runSubtest(t, h, tracker, "Concurrent/DifferentEntities", testEntityConcurrentDifferent)
+	runSubtest(t, h, tracker, "TenantIsolation/Get", testEntityTenantIsolationGet)
+	runSubtest(t, h, tracker, "TenantIsolation/GetAll", testEntityTenantIsolationGetAll)
+	runSubtest(t, h, tracker, "TenantIsolation/Delete", testEntityTenantIsolationDelete)
+	runSubtest(t, h, tracker, "EmptyTenant", testEntityEmptyTenant)
 }
 
 func testEntityCreateAndGet(t *testing.T, h Harness) {
@@ -417,7 +417,6 @@ func testEntityCompareAndSaveSuccess(t *testing.T, h Harness) {
 }
 
 func testEntityCompareAndSaveConflict(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Conflict")
 	ctx := tenantContext(h.NewTenant())
 	id := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {

@@ -8,14 +8,14 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runKeyValueSuite(t *testing.T, h Harness) {
-	t.Run("PutAndGet", func(t *testing.T) { testKVPutAndGet(t, h) })
-	t.Run("Get/NotFound", func(t *testing.T) { testKVGetNotFound(t, h) })
-	t.Run("Overwrite", func(t *testing.T) { testKVOverwrite(t, h) })
-	t.Run("Delete", func(t *testing.T) { testKVDelete(t, h) })
-	t.Run("List/Namespace", func(t *testing.T) { testKVListNamespace(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testKVTenantIsolation(t, h) })
-	t.Run("Value/BinarySafe", func(t *testing.T) { testKVBinarySafe(t, h) })
+func runKeyValueSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "PutAndGet", testKVPutAndGet)
+	runSubtest(t, h, tracker, "Get/NotFound", testKVGetNotFound)
+	runSubtest(t, h, tracker, "Overwrite", testKVOverwrite)
+	runSubtest(t, h, tracker, "Delete", testKVDelete)
+	runSubtest(t, h, tracker, "List/Namespace", testKVListNamespace)
+	runSubtest(t, h, tracker, "TenantIsolation", testKVTenantIsolation)
+	runSubtest(t, h, tracker, "Value/BinarySafe", testKVBinarySafe)
 }
 
 func testKVPutAndGet(t *testing.T, h Harness) {

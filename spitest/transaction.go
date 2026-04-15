@@ -11,14 +11,14 @@ import (
 
 // runTransactionSuite covers TransactionManager. Each subtest gets a
 // fresh tenant.
-func runTransactionSuite(t *testing.T, h Harness) {
-	t.Run("CommitVisibility", func(t *testing.T) { testTxCommitVisibility(t, h) })
-	t.Run("RollbackDiscards", func(t *testing.T) { testTxRollbackDiscards(t, h) })
-	t.Run("Join", func(t *testing.T) { testTxJoin(t, h) })
-	t.Run("SubmitTime", func(t *testing.T) { testTxSubmitTime(t, h) })
-	t.Run("Savepoint/ReleaseMergesWork", func(t *testing.T) { testTxSavepointRelease(t, h) })
-	t.Run("Savepoint/RollbackToDiscards", func(t *testing.T) { testTxSavepointRollback(t, h) })
-	t.Run("BeginAfterCommit", func(t *testing.T) { testTxBeginAfterCommit(t, h) })
+func runTransactionSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "CommitVisibility", testTxCommitVisibility)
+	runSubtest(t, h, tracker, "RollbackDiscards", testTxRollbackDiscards)
+	runSubtest(t, h, tracker, "Join", testTxJoin)
+	runSubtest(t, h, tracker, "SubmitTime", testTxSubmitTime)
+	runSubtest(t, h, tracker, "Savepoint/ReleaseMergesWork", testTxSavepointRelease)
+	runSubtest(t, h, tracker, "Savepoint/RollbackToDiscards", testTxSavepointRollback)
+	runSubtest(t, h, tracker, "BeginAfterCommit", testTxBeginAfterCommit)
 }
 
 // Writes in an open tx are invisible to outside readers; after Commit
@@ -78,7 +78,6 @@ func testTxRollbackDiscards(t *testing.T, h Harness) {
 }
 
 func testTxJoin(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Join")
 	ctx := tenantContext(h.NewTenant())
 	tm, err := h.Factory.TransactionManager(ctx)
 	require.NoError(t, err)

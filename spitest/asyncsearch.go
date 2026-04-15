@@ -9,17 +9,17 @@ import (
 	spi "github.com/cyoda-platform/cyoda-go-spi"
 )
 
-func runAsyncSearchSuite(t *testing.T, h Harness) {
-	t.Run("CreateAndGet", func(t *testing.T) { testASCreateAndGet(t, h) })
-	t.Run("GetJob/NotFound", func(t *testing.T) { testASGetJobNotFound(t, h) })
-	t.Run("UpdateStatus/Succeeded", func(t *testing.T) { testASUpdateSucceeded(t, h) })
-	t.Run("UpdateStatus/Failed", func(t *testing.T) { testASUpdateFailed(t, h) })
-	t.Run("SaveAndGetResults/Pagination", func(t *testing.T) { testASResultsPagination(t, h) })
-	t.Run("Cancel", func(t *testing.T) { testASCancel(t, h) })
-	t.Run("Cancel/NotFound", func(t *testing.T) { testASCancelNotFound(t, h) })
-	t.Run("DeleteJob", func(t *testing.T) { testASDeleteJob(t, h) })
-	t.Run("ReapExpired", func(t *testing.T) { testASReapExpired(t, h) })
-	t.Run("TenantIsolation", func(t *testing.T) { testASTenantIsolation(t, h) })
+func runAsyncSearchSuite(t *testing.T, h Harness, tracker *skipTracker) {
+	runSubtest(t, h, tracker, "CreateAndGet", testASCreateAndGet)
+	runSubtest(t, h, tracker, "GetJob/NotFound", testASGetJobNotFound)
+	runSubtest(t, h, tracker, "UpdateStatus/Succeeded", testASUpdateSucceeded)
+	runSubtest(t, h, tracker, "UpdateStatus/Failed", testASUpdateFailed)
+	runSubtest(t, h, tracker, "SaveAndGetResults/Pagination", testASResultsPagination)
+	runSubtest(t, h, tracker, "Cancel", testASCancel)
+	runSubtest(t, h, tracker, "Cancel/NotFound", testASCancelNotFound)
+	runSubtest(t, h, tracker, "DeleteJob", testASDeleteJob)
+	runSubtest(t, h, tracker, "ReapExpired", testASReapExpired)
+	runSubtest(t, h, tracker, "TenantIsolation", testASTenantIsolation)
 }
 
 func newSearchJob(tenantID spi.TenantID, id string) *spi.SearchJob {
@@ -54,7 +54,6 @@ func testASGetJobNotFound(t *testing.T, h Harness) {
 }
 
 func testASUpdateSucceeded(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Succeeded")
 	tid := h.NewTenant()
 	ctx := tenantContext(tid)
 	as, _ := h.Factory.AsyncSearchStore(ctx)
@@ -71,7 +70,6 @@ func testASUpdateSucceeded(t *testing.T, h Harness) {
 }
 
 func testASUpdateFailed(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Failed")
 	tid := h.NewTenant()
 	ctx := tenantContext(tid)
 	as, _ := h.Factory.AsyncSearchStore(ctx)
@@ -84,13 +82,14 @@ func testASUpdateFailed(t *testing.T, h Harness) {
 }
 
 func testASResultsPagination(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Pagination")
 	tid := h.NewTenant()
 	ctx := tenantContext(tid)
 	as, _ := h.Factory.AsyncSearchStore(ctx)
 	id := newID()
 	require.NoError(t, as.CreateJob(ctx, newSearchJob(tid, id)))
-	ids := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	// Use UUID-based IDs to satisfy backends that store result IDs as timeuuids
+	// (e.g. Cassandra). Short literals like "a","b","c" are not valid UUIDs.
+	ids := []string{newID(), newID(), newID(), newID(), newID(), newID(), newID(), newID()}
 	require.NoError(t, as.SaveResults(ctx, id, ids))
 
 	page1, total, err := as.GetResultIDs(ctx, id, 0, 3)
@@ -105,7 +104,6 @@ func testASResultsPagination(t *testing.T, h Harness) {
 }
 
 func testASCancel(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "Cancel")
 	tid := h.NewTenant()
 	ctx := tenantContext(tid)
 	as, _ := h.Factory.AsyncSearchStore(ctx)
@@ -136,7 +134,6 @@ func testASDeleteJob(t *testing.T, h Harness) {
 }
 
 func testASReapExpired(t *testing.T, h Harness) {
-	h.skipIfRegistered(t, "ReapExpired")
 	tid := h.NewTenant()
 	ctx := tenantContext(tid)
 	as, _ := h.Factory.AsyncSearchStore(ctx)
