@@ -43,6 +43,9 @@ func (m *mockEntityStore) Delete(context.Context, string) error                 
 func (m *mockEntityStore) DeleteAll(context.Context, spi.ModelRef) error        { return nil }
 func (m *mockEntityStore) Exists(context.Context, string) (bool, error)         { return false, nil }
 func (m *mockEntityStore) Count(context.Context, spi.ModelRef) (int64, error)   { return 0, nil }
+func (m *mockEntityStore) CountByState(context.Context, spi.ModelRef, []string) (map[string]int64, error) {
+	return nil, nil
+}
 func (m *mockEntityStore) GetVersionHistory(context.Context, string) ([]spi.EntityVersion, error) {
 	return nil, nil
 }
