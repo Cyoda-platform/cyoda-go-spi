@@ -1,0 +1,4 @@
+.claude/settings.local.json
+.sandbox/
+coverage.out
+*.test
