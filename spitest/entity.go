@@ -26,6 +26,7 @@ func runEntitySuite(t *testing.T, h Harness, tracker *skipTracker) {
 	runSubtest(t, h, tracker, "DeleteAll", testEntityDeleteAll)
 	runSubtest(t, h, tracker, "Exists", testEntityExists)
 	runSubtest(t, h, tracker, "Count", testEntityCount)
+	runSubtest(t, h, tracker, "CountByState", testEntityCountByState)
 	runSubtest(t, h, tracker, "JSONFidelity/DeepNesting", testEntityJSONFidelity)
 
 	// Temporal group (Task 5)
@@ -214,6 +215,84 @@ func testEntityCount(t *testing.T, h Harness) {
 	n, err := es.Count(ctx, mref)
 	require.NoError(t, err)
 	require.Equal(t, int64(7), n)
+}
+
+func testEntityCountByState(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	mref := spi.ModelRef{EntityName: "m-cbs", ModelVersion: "1"}
+
+	// Empty model: nil filter -> empty map.
+	es, _ := h.Factory.EntityStore(ctx)
+	got, err := es.CountByState(ctx, mref, nil)
+	require.NoError(t, err)
+	require.Empty(t, got, "empty model with nil filter should return empty map")
+
+	// Empty model: non-nil-but-empty-slice filter -> empty map (no storage call expected).
+	got, err = es.CountByState(ctx, mref, []string{})
+	require.NoError(t, err)
+	require.Empty(t, got, "empty filter slice should return empty map")
+
+	// Save 3 in "new", 2 in "approved", 1 in "rejected", and 1 deleted "approved" (must NOT count).
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		esTx, _ := h.Factory.EntityStore(txCtx)
+		for i := 0; i < 3; i++ {
+			e := newEntity(t, "m-cbs", newID(), map[string]any{"i": i})
+			e.Meta.State = "new"
+			_, err := esTx.Save(txCtx, e)
+			require.NoError(t, err)
+		}
+		for i := 0; i < 2; i++ {
+			e := newEntity(t, "m-cbs", newID(), map[string]any{"i": i})
+			e.Meta.State = "approved"
+			_, err := esTx.Save(txCtx, e)
+			require.NoError(t, err)
+		}
+		e := newEntity(t, "m-cbs", newID(), map[string]any{"i": 99})
+		e.Meta.State = "rejected"
+		_, err := esTx.Save(txCtx, e)
+		require.NoError(t, err)
+
+		toDel := newEntity(t, "m-cbs", newID(), map[string]any{"i": 100})
+		toDel.Meta.State = "approved"
+		_, err = esTx.Save(txCtx, toDel)
+		require.NoError(t, err)
+		require.NoError(t, esTx.Delete(txCtx, toDel.Meta.ID))
+	})
+
+	// nil filter -> all states (deleted excluded).
+	got, err = es.CountByState(ctx, mref, nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"new": 3, "approved": 2, "rejected": 1}, got)
+
+	// Filter to "approved" only.
+	got, err = es.CountByState(ctx, mref, []string{"approved"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"approved": 2}, got)
+
+	// Filter including a missing state — missing omitted (not zero-valued).
+	got, err = es.CountByState(ctx, mref, []string{"approved", "missing"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"approved": 2}, got)
+
+	// Tenant isolation.
+	otherCtx := tenantContext(h.NewTenant())
+	esOther, _ := h.Factory.EntityStore(otherCtx)
+	got, err = esOther.CountByState(otherCtx, mref, nil)
+	require.NoError(t, err)
+	require.Empty(t, got, "different tenant must not see other tenant's entities")
+
+	// Transactional visibility.
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		esTx, _ := h.Factory.EntityStore(txCtx)
+		e := newEntity(t, "m-cbs", newID(), map[string]any{"tx": true})
+		e.Meta.State = "in_review"
+		_, err := esTx.Save(txCtx, e)
+		require.NoError(t, err)
+
+		got, err := esTx.CountByState(txCtx, mref, []string{"in_review"})
+		require.NoError(t, err)
+		require.Equal(t, map[string]int64{"in_review": 1}, got, "uncommitted tx save must be visible inside tx")
+	})
 }
 
 func testEntitySaveAllOrdering(t *testing.T, h Harness) {
