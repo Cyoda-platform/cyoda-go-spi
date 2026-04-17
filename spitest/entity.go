@@ -293,6 +293,53 @@ func testEntityCountByState(t *testing.T, h Harness) {
 		require.NoError(t, err)
 		require.Equal(t, map[string]int64{"in_review": 1}, got, "uncommitted tx save must be visible inside tx")
 	})
+
+	// State transition: an entity saved at one state and re-saved at another
+	// in a separate transaction must count under its CURRENT state, not its
+	// prior state. This catches a class of indexed-backend bugs where same-
+	// commit IN/OUT pairs from a re-save can be misclassified depending on
+	// scan order across value-keyed partitions.
+	//
+	// "approved" → "rejected" is chosen deliberately: when an indexed backend
+	// partitions by the indexed value (e.g. cassandra's index_string_data
+	// keyed by period_val derived from the value), period_val("approved") =
+	// "ap" sorts BEFORE period_val("rejected") = "re". A scan that processes
+	// the OUT row in the "approved" partition first and uses strict
+	// submitTime > w.submitTime to update its winner map will fail to update
+	// the winner when the IN row arrives in the "rejected" partition with the
+	// SAME submit_time — silently dropping the entity from the count. Any
+	// backend that survives this scenario must tie-break IN over OUT at
+	// equal submit_time.
+	//
+	// Backends that read state directly from the current entity row
+	// (memory/sqlite/postgres in cyoda-go) pass this naturally because they
+	// never see historical IN/OUT markers; the test still locks the contract
+	// for them so a future indexed implementation cannot regress.
+	transitionID := newID()
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		esTx, _ := h.Factory.EntityStore(txCtx)
+		e := newEntity(t, "m-cbs", transitionID, map[string]any{"v": 1})
+		e.Meta.State = "approved"
+		_, err := esTx.Save(txCtx, e)
+		require.NoError(t, err)
+	})
+	withTx(t, h, ctx, func(txCtx context.Context) {
+		esTx, _ := h.Factory.EntityStore(txCtx)
+		e := newEntity(t, "m-cbs", transitionID, map[string]any{"v": 2})
+		e.Meta.State = "rejected"
+		_, err := esTx.Save(txCtx, e)
+		require.NoError(t, err)
+	})
+
+	// After the transition, totals should be:
+	//   new: 3 (unchanged from initial setup)
+	//   approved: 2 (unchanged — transitionID was saved at approved then moved away)
+	//   rejected: 2 (was 1 before; +1 for the transitioned entity)
+	//   in_review: 1 (from the prior transactional-visibility section, which committed)
+	got, err = es.CountByState(ctx, mref, nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"new": 3, "approved": 2, "rejected": 2, "in_review": 1}, got,
+		"after state transition, entity must count under post-transition state")
 }
 
 func testEntitySaveAllOrdering(t *testing.T, h Harness) {
