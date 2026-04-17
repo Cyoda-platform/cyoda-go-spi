@@ -315,17 +315,32 @@ func testEntityCountByState(t *testing.T, h Harness) {
 	// (memory/sqlite/postgres in cyoda-go) pass this naturally because they
 	// never see historical IN/OUT markers; the test still locks the contract
 	// for them so a future indexed implementation cannot regress.
+	// The payload also embeds {"_meta": {"state": ...}} alongside Meta.State
+	// because some backends (notably the cassandra plugin's lifecycle indexer
+	// at AddLifecycleIndexEntries) read the prior state from the prevData
+	// payload, not from Meta.State. Without an embedded _meta.state in the
+	// PRIOR payload, those backends see oldState="" on re-save and emit only
+	// IN(newState) — the bug's IN+OUT-at-same-submit-time pattern never
+	// arises and the bug is not exercised. Backends that read state directly
+	// from the entity row (memory/sqlite/postgres) ignore the payload _meta
+	// and pass naturally.
 	transitionID := newID()
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		esTx, _ := h.Factory.EntityStore(txCtx)
-		e := newEntity(t, "m-cbs", transitionID, map[string]any{"v": 1})
+		e := newEntity(t, "m-cbs", transitionID, map[string]any{
+			"v":     1,
+			"_meta": map[string]any{"state": "approved"},
+		})
 		e.Meta.State = "approved"
 		_, err := esTx.Save(txCtx, e)
 		require.NoError(t, err)
 	})
 	withTx(t, h, ctx, func(txCtx context.Context) {
 		esTx, _ := h.Factory.EntityStore(txCtx)
-		e := newEntity(t, "m-cbs", transitionID, map[string]any{"v": 2})
+		e := newEntity(t, "m-cbs", transitionID, map[string]any{
+			"v":     2,
+			"_meta": map[string]any{"state": "rejected"},
+		})
 		e.Meta.State = "rejected"
 		_, err := esTx.Save(txCtx, e)
 		require.NoError(t, err)
