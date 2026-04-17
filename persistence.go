@@ -38,6 +38,21 @@ type EntityStore interface {
 	DeleteAll(ctx context.Context, modelRef ModelRef) error
 	Exists(ctx context.Context, entityID string) (bool, error)
 	Count(ctx context.Context, modelRef ModelRef) (int64, error)
+	// CountByState returns the count of non-deleted entities grouped by state
+	// for the given model. If states is non-nil, only the listed states are
+	// included in the result. If states is nil, all states are returned.
+	// An empty (non-nil) states slice returns an empty map without querying
+	// the storage layer.
+	//
+	// Unknown model: returns an empty map with no error, matching Count's
+	// behavior (no model-registry check at this layer).
+	//
+	// Implementations MUST push the state filter down to the storage layer
+	// when feasible. Callers may invoke this from inside a transaction; the
+	// returned counts MUST reflect the transactional view (uncommitted writes
+	// from the current tx are visible, writes from other in-flight txs are not),
+	// matching the semantics of Count.
+	CountByState(ctx context.Context, modelRef ModelRef, states []string) (map[string]int64, error)
 	GetVersionHistory(ctx context.Context, entityID string) ([]EntityVersion, error)
 }
 
