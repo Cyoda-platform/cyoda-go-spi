@@ -56,6 +56,14 @@ type EntityStore interface {
 	GetVersionHistory(ctx context.Context, entityID string) ([]EntityVersion, error)
 }
 
+// SchemaDelta is an opaque, plugin-agnostic serialization of an
+// additive schema change. Bytes are produced by the consuming
+// application's schema diff logic (e.g. cyoda-go's
+// internal/domain/model/schema) and replayed by an injected apply
+// function in the plugin. Plugins persist bytes verbatim; they MUST
+// NOT interpret them.
+type SchemaDelta []byte
+
 type ModelStore interface {
 	Save(ctx context.Context, desc *ModelDescriptor) error
 	Get(ctx context.Context, modelRef ModelRef) (*ModelDescriptor, error)
@@ -65,6 +73,30 @@ type ModelStore interface {
 	Unlock(ctx context.Context, modelRef ModelRef) error
 	IsLocked(ctx context.Context, modelRef ModelRef) (bool, error)
 	SetChangeLevel(ctx context.Context, modelRef ModelRef, level ChangeLevel) error
+	// ExtendSchema appends an additive schema delta to the model.
+	//
+	// Contract:
+	//   - Semantically equivalent to "append the delta to the model's
+	//     extension log, participating in the active entity
+	//     transaction." A plugin whose storage doesn't natively model
+	//     a log may implement this by applying the delta to the
+	//     in-store schema so long as the externally observable
+	//     behaviour matches: visible iff the entity tx commits; no
+	//     conflict with concurrent data ops; result equal to what an
+	//     append-and-fold would produce.
+	//   - Concurrent ExtendSchema calls on distinct entity
+	//     transactions targeting the same model MUST NOT conflict
+	//     with each other at the storage layer.
+	//   - Callers are expected to invoke ExtendSchema and Save on
+	//     disjoint model lifecycle phases (full-replace via Save on
+	//     unlocked models; additive deltas via ExtendSchema on
+	//     published models). Plugins do not enforce this disjointness;
+	//     it is a consuming-repo invariant that enables the no-conflict
+	//     guarantee above.
+	//   - Deltas are opaque to plugins. Well-formed deltas produced by
+	//     the consuming repo are commutative and validation-monotone;
+	//     plugins have no obligation beyond store-and-forward.
+	ExtendSchema(ctx context.Context, ref ModelRef, delta SchemaDelta) error
 }
 
 type KeyValueStore interface {
