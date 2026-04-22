@@ -23,3 +23,15 @@ func TestSentinelsAreMatchedAfterWrap(t *testing.T) {
 		t.Fatal("wrapped ErrNotFound should match via errors.Is")
 	}
 }
+
+func TestErrRetryExhausted_DistinctFromErrConflict(t *testing.T) {
+	if errors.Is(ErrRetryExhausted, ErrConflict) {
+		t.Error("ErrRetryExhausted must not unwrap to ErrConflict — they are distinct failure modes")
+	}
+	if errors.Is(ErrConflict, ErrRetryExhausted) {
+		t.Error("ErrConflict must not unwrap to ErrRetryExhausted")
+	}
+	if ErrRetryExhausted.Error() == "" {
+		t.Error("ErrRetryExhausted must have a non-empty message")
+	}
+}
