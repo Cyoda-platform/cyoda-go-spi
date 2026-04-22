@@ -73,29 +73,27 @@ type ModelStore interface {
 	Unlock(ctx context.Context, modelRef ModelRef) error
 	IsLocked(ctx context.Context, modelRef ModelRef) (bool, error)
 	SetChangeLevel(ctx context.Context, modelRef ModelRef, level ChangeLevel) error
-	// ExtendSchema appends an additive schema delta to the model.
+	// ExtendSchema appends a schema delta for the model at ref. The
+	// delta is an opaque, plugin-agnostic blob that the plugin stores
+	// verbatim in its extension log; folding the log into the current
+	// schema is done on read via a plugin-injected ApplyFunc.
 	//
 	// Contract:
-	//   - Semantically equivalent to "append the delta to the model's
-	//     extension log, participating in the active entity
-	//     transaction." A plugin whose storage doesn't natively model
-	//     a log may implement this by applying the delta to the
-	//     in-store schema so long as the externally observable
-	//     behaviour matches: visible iff the entity tx commits; no
-	//     conflict with concurrent data ops; result equal to what an
-	//     append-and-fold would produce.
-	//   - Concurrent ExtendSchema calls on distinct entity
-	//     transactions targeting the same model MUST NOT conflict
-	//     with each other at the storage layer.
-	//   - Callers are expected to invoke ExtendSchema and Save on
-	//     disjoint model lifecycle phases (full-replace via Save on
-	//     unlocked models; additive deltas via ExtendSchema on
-	//     published models). Plugins do not enforce this disjointness;
-	//     it is a consuming-repo invariant that enables the no-conflict
-	//     guarantee above.
-	//   - Deltas are opaque to plugins. Well-formed deltas produced by
-	//     the consuming repo are commutative and validation-monotone;
-	//     plugins have no obligation beyond store-and-forward.
+	//   - Success (nil return) means the extension is durably committed
+	//     and visible to subsequent reads on this node.
+	//   - A non-nil error means no persisted effect — no log entry,
+	//     no savepoint, no partial state.
+	//   - Plugins with a native conflict surface (sqlite SQLITE_BUSY,
+	//     cassandra LWT applied:false) retry transparently up to a
+	//     configurable budget. On exhaustion without ctx cancellation,
+	//     return ErrRetryExhausted.
+	//   - Context cancellation between retry attempts returns ctx.Err()
+	//     (wrapped with attempt count), not ErrRetryExhausted. Mid-attempt
+	//     cancellation follows backend-native behavior.
+	//   - Plugins without a conflict surface (memory, postgres) commit
+	//     immediately or fail with the backend's native error.
+	//
+	// Empty or nil deltas are a no-op and return nil.
 	ExtendSchema(ctx context.Context, ref ModelRef, delta SchemaDelta) error
 }
 
