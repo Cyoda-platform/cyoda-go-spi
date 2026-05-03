@@ -16,10 +16,12 @@ type TransactionManager interface {
 	Begin(ctx context.Context) (txID string, txCtx context.Context, err error)
 
 	// Commit closes the transaction and applies its buffered writes to
-	// durable state. Commit acquires tx.OpMu.Lock for its duration, so
-	// it waits for in-flight ops on the same tx to drain before mutating
-	// or closing tx state. Implementations must verify that the caller's
-	// tenant matches tx.TenantID and reject mismatched-tenant calls.
+	// the underlying store. Commit acquires tx.OpMu.Lock for its
+	// duration, so it waits for any in-flight tx-path operation on the
+	// same tx (any SPI method invocation that holds OpMu.RLock) to drain
+	// before mutating or closing tx state. Implementations must verify
+	// that the caller's tenant matches tx.TenantID and reject
+	// mismatched-tenant calls.
 	Commit(ctx context.Context, txID string) error
 
 	// Rollback closes the transaction and discards its buffered writes.
@@ -32,24 +34,30 @@ type TransactionManager interface {
 	//
 	// Two distinct contracts apply to a joined tx:
 	//
-	//   - Plugin contract (enforced by [TransactionState.OpMu]): the plugin
-	//     guarantees that closure operations (Commit, Rollback,
-	//     RollbackToSavepoint) wait for in-flight ops to drain via
-	//     OpMu.Lock vs OpMu.RLock pairing.
+	//   - Plugin contract (enforced by [TransactionState.OpMu]): the
+	//     plugin's tx-path SPI methods hold OpMu.RLock; the plugin's
+	//     closure SPI methods (Commit, Rollback, RollbackToSavepoint)
+	//     hold OpMu.Lock. So closure waits for any in-flight SPI-method
+	//     invocation to return before mutating or closing tx state. This
+	//     contract covers SPI-method invocations only — application code
+	//     that mutates tx state directly (e.g. through a [GetTransaction]
+	//     handle) is outside the OpMu protection.
 	//
 	//   - Application contract (NOT enforced by the plugin): the
-	//     application must coordinate concurrent in-flight ops on the same
-	//     tx (e.g. Save + Get from two goroutines on the same Buffer key)
-	//     externally. OpMu.RLock allows multiple readers; the underlying
-	//     map accesses race if both readers mutate the same entry. The
-	//     plugin does not promise to detect or recover from this
-	//     application-contract violation.
+	//     application must serialise its own concurrent in-flight ops on
+	//     the same tx. OpMu.RLock allows multiple readers concurrently;
+	//     two RLock-holding ops (e.g. two Save calls from different
+	//     goroutines) will trigger Go's "concurrent map writes" runtime
+	//     fatal because both write to tx.Buffer / tx.WriteSet / tx.Deletes
+	//     without mutual exclusion. RLock does not protect map writes from
+	//     each other regardless of key overlap. The plugin does not detect
+	//     or recover from this contract violation.
 	//
 	// Implementations must verify that the caller's tenant matches
 	// tx.TenantID and reject mismatched-tenant joins. Implementations must
 	// read tx.RolledBack and tx.Closed under tx.OpMu.RLock (not under the
-	// manager mutex) — Commit and Rollback may write those flags in their
-	// defer outside the manager-mutex region.
+	// manager mutex) — Commit's deferred Closed-write runs outside the
+	// manager-mutex region.
 	Join(ctx context.Context, txID string) (txCtx context.Context, err error)
 
 	GetSubmitTime(ctx context.Context, txID string) (time.Time, error)

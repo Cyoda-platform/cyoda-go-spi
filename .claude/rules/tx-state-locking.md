@@ -4,18 +4,25 @@ paths:
 ---
 # Transaction-State Locking Discipline
 
-Plugin implementations of `TransactionManager` must coordinate concurrent
-access to `*spi.TransactionState`'s mutable fields via `tx.OpMu`. The full
-contract lives on `TransactionState`'s godoc — this rule is the checklist
-enforced at code review.
+Plugin implementations must coordinate concurrent access to
+`*spi.TransactionState`'s mutable fields via `tx.OpMu`. The full contract
+lives on `TransactionState`'s godoc — this rule is the checklist enforced
+at code review.
 
 ## When this rule applies
 
-Any new method (or change to an existing method) in a TransactionManager
-implementation that reads or writes any of:
+Any new method (or change to an existing method) **on any plugin type** —
+`TransactionManager`, `EntityStore`, `SearchStore`, or any other surface —
+that reads or writes any of:
 
 - `tx.ReadSet`, `tx.WriteSet`, `tx.Buffer`, `tx.Deletes`
 - `tx.RolledBack`, `tx.Closed`
+
+The rule applies to a method based on the fields it touches, not the
+interface it implements. Adding a method like `EntityStore.Touch(ctx)`
+that mutates `tx.Buffer` is in scope; adding a method that does not
+consult `spi.GetTransaction(ctx)` at all (historical reads, aggregate
+queries against committed state) is out of scope.
 
 The immutable fields (`tx.ID`, `tx.TenantID`, `tx.SnapshotTime`) do not
 require locks once `Begin` has returned.
@@ -24,8 +31,8 @@ require locks once `Begin` has returned.
 
 | Operation class | Lock posture | Examples |
 |---|---|---|
-| In-flight tx-path read or write | `tx.OpMu.RLock` | Save, CompareAndSave, Get, GetAll, GetAsAt, Delete, DeleteAll, Exists, Count, Savepoint |
-| Closure (waits for in-flight to drain) | `tx.OpMu.Lock` | Commit, Rollback, RollbackToSavepoint |
+| In-flight tx-path operation (read or write on tx state) | `tx.OpMu.RLock` | Save, CompareAndSave, Get, GetAll, GetAsAt, Delete, DeleteAll, Exists, Count, Savepoint |
+| Closure operation (waits for in-flight to drain) | `tx.OpMu.Lock` | Commit, Rollback, RollbackToSavepoint |
 | Tx-state-free, manager-state-only | manager mutex only | ReleaseSavepoint |
 
 ## Required code comment
@@ -60,6 +67,14 @@ the same OpMu), the race detector cannot flag it directly — the test
 becomes a contract-pin sentinel rather than a race reproducer. Document
 the test class in its block comment.
 
+Tolerated-error matching in race tests must use `errors.Is` against
+sentinel error types once those land (tracked as #200 in cyoda-go).
+Until then, substring matching is acceptable but introduces a subtle
+weakness: a future contributor who introduces a new error path whose
+message happens to contain a tolerated substring would be silently
+swallowed. Mark such tests with `// TODO(#200): replace substring match
+with errors.Is` so the cleanup is discoverable.
+
 ## Tenant isolation (paired requirement)
 
 Every method that mutates `*TransactionState` must verify
@@ -84,8 +99,16 @@ race detector if any code path holds the inverted order.
 ## Why
 
 Pre-discipline, plugins drifted into races between in-flight ops and
-Commit/Rollback (issues #176, #199 in cyoda-go). Each round of audit
-surfaced another method that lacked OpMu coverage. The invariant that
-every TransactionState-touching method declares its posture in a code
-comment makes drift visible at review and prevents the iterative
-whack-a-mole pattern from continuing.
+Commit/Rollback. The fix landed in waves as each round of audit surfaced
+another method that lacked OpMu coverage:
+
+- cyoda-go PR #153 (v0.6.3) — Save, CompareAndSave.
+- cyoda-go #176 / PR #198 — Get, GetAll, Delete, DeleteAll, Exists, Count.
+- cyoda-go PR #198 final review — GetAsAt (folded in same PR).
+- cyoda-go #199 / PR #201 — Savepoint, RollbackToSavepoint, Join.
+
+The invariant that every TransactionState-touching method declares its
+posture in a code comment makes drift visible at review and prevents the
+iterative whack-a-mole pattern from continuing. New plugin types and new
+methods on existing plugin types are both covered — the rule is scoped
+by field access, not by interface membership.
