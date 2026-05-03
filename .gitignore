@@ -2,3 +2,4 @@
 .sandbox/
 coverage.out
 *.test
+.worktrees/
