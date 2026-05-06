@@ -12,6 +12,8 @@ MAINTAINING.md.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-05
+
 ### Added
 
 - `.github/workflows/ci.yml`: self-contained CI running `go vet`,
