@@ -15,10 +15,12 @@ backend must implement. Plugin authors depend only on this module.
 
 Standard library only.
 
-## Versioning
+## Versioning & Compatibility
 
-Semantic versioning. Breaking changes bump the major version. Pre-1.0,
-breaking changes may occur in minor releases.
+- **Releases & changes:** see [`CHANGELOG.md`](CHANGELOG.md).
+- **Release process & deprecation policy:** see [`MAINTAINING.md`](MAINTAINING.md).
+- **Notifications for breaking changes:** open an issue or PR your project
+  into [`KNOWN_CONSUMERS.md`](KNOWN_CONSUMERS.md).
 
 ## License
 
