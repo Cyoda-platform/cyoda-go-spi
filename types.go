@@ -138,6 +138,15 @@ type TransitionDefinition struct {
 
 // ProcessorDefinition represents a processor attached to a transition.
 type ProcessorDefinition struct {
+	// Type is the execution-location axis. Recognised values are defined
+	// by the cyoda-go engine package; canonical values are "externalized"
+	// (dispatched via gRPC to a calculation node selected by
+	// Config.CalculationNodesTags) and "internalized" (reserved for an
+	// in-process execution location, currently rejected at engine
+	// dispatch as not yet implemented). Empty is treated as "externalized".
+	// Any value other than "internalized" falls through to the
+	// ExecutionMode dispatch path; import-time validation does not
+	// constrain this field.
 	Type          string          `json:"type"`
 	Name          string          `json:"name"`
 	ExecutionMode string          `json:"executionMode,omitempty"`
