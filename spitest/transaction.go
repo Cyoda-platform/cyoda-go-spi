@@ -1,6 +1,7 @@
 package spitest
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -19,6 +20,13 @@ func runTransactionSuite(t *testing.T, h Harness, tracker *skipTracker) {
 	runSubtest(t, h, tracker, "Savepoint/ReleaseMergesWork", testTxSavepointRelease)
 	runSubtest(t, h, tracker, "Savepoint/RollbackToDiscards", testTxSavepointRollback)
 	runSubtest(t, h, tracker, "BeginAfterCommit", testTxBeginAfterCommit)
+	runSubtest(t, h, tracker, "TxStateErrors/JoinAfterCommit", testTxStateJoinAfterCommit)
+	runSubtest(t, h, tracker, "TxStateErrors/CommitAfterCommit", testTxStateCommitAfterCommit)
+	runSubtest(t, h, tracker, "TxStateErrors/CommitAfterRollback", testTxStateCommitAfterRollback)
+	runSubtest(t, h, tracker, "TxStateErrors/OpAfterRollback", testTxStateOpAfterRollback)
+	runSubtest(t, h, tracker, "TxStateErrors/TenantMismatchOnJoin", testTxStateTenantMismatchOnJoin)
+	runSubtest(t, h, tracker, "TxStateErrors/TenantMismatchOnCommit", testTxStateTenantMismatchOnCommit)
+	runSubtest(t, h, tracker, "TxStateErrors/SavepointNotFound", testTxStateSavepointNotFound)
 }
 
 // Writes in an open tx are invisible to outside readers; after Commit
@@ -204,12 +212,155 @@ func testTxBeginAfterCommit(t *testing.T, h Harness) {
 	// (e.g. Cassandra) can locate the transaction on Commit.
 	require.NoError(t, tm.Commit(txCtx, txID))
 
-	// Re-joining a committed tx must fail. We can't use errors.Is against
-	// a specific sentinel because the SPI does not yet define one for
-	// "transaction already terminated" — backends return their own errors
-	// (e.g., "tx not found in registry"). This assertion is deliberately
-	// loose; tightening it requires adding spi.ErrTxClosed or similar
-	// to cyoda-go-spi, which is out of scope for Plan 5.
+	// Kept as a loose-assertion floor: any error suffices. The strict
+	// version that asserts errors.Is(err, spi.ErrTxAlreadyCommitted) (and
+	// the ErrTxTerminated parent via Unwrap) lives in TxStateErrors/
+	// JoinAfterCommit. Both coexist intentionally: this one runs against
+	// backends that haven't yet conformed to the sentinel contract.
 	_, err = tm.Join(ctx, txID)
 	require.Error(t, err, "Join against committed txID must fail")
+}
+
+// testTxStateJoinAfterCommit verifies that joining a transaction whose
+// terminal state is Commit produces ErrTxAlreadyCommitted (which also
+// matches ErrTxTerminated via Unwrap).
+func testTxStateJoinAfterCommit(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	tm, err := h.Factory.TransactionManager(ctx)
+	require.NoError(t, err)
+
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, tm.Commit(txCtx, txID))
+
+	_, err = tm.Join(ctx, txID)
+	require.Error(t, err, "Join after Commit must fail")
+	require.True(t,
+		errors.Is(err, spi.ErrTxAlreadyCommitted) || errors.Is(err, spi.ErrTxNotFound),
+		"Join after Commit must wrap ErrTxAlreadyCommitted or ErrTxNotFound (backends that purge committed-tx state collapse these); got: %v", err)
+}
+
+// testTxStateCommitAfterCommit verifies that double-Commit produces
+// ErrTxAlreadyCommitted or ErrTxNotFound (backends that purge state
+// after the first Commit collapse to NotFound).
+func testTxStateCommitAfterCommit(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	tm, err := h.Factory.TransactionManager(ctx)
+	require.NoError(t, err)
+
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, tm.Commit(txCtx, txID))
+
+	err = tm.Commit(txCtx, txID)
+	require.Error(t, err, "second Commit must fail")
+	require.True(t,
+		errors.Is(err, spi.ErrTxAlreadyCommitted) || errors.Is(err, spi.ErrTxNotFound),
+		"second Commit must wrap ErrTxAlreadyCommitted or ErrTxNotFound; got: %v", err)
+}
+
+// testTxStateCommitAfterRollback verifies that Commit on a rolled-back tx
+// produces ErrTxRolledBack or ErrTxNotFound (backends that purge state
+// after Rollback collapse to NotFound).
+func testTxStateCommitAfterRollback(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	tm, err := h.Factory.TransactionManager(ctx)
+	require.NoError(t, err)
+
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, tm.Rollback(txCtx, txID))
+
+	err = tm.Commit(txCtx, txID)
+	require.Error(t, err, "Commit after Rollback must fail")
+	require.True(t,
+		errors.Is(err, spi.ErrTxRolledBack) || errors.Is(err, spi.ErrTxNotFound),
+		"Commit after Rollback must wrap ErrTxRolledBack or ErrTxNotFound; got: %v", err)
+}
+
+// testTxStateOpAfterRollback verifies that a data op against a rolled-back
+// transaction produces ErrTxTerminated. Backends with remote tx state
+// (postgres) may skip this via Harness.Skip — see the ErrTxTerminated
+// godoc caveat.
+func testTxStateOpAfterRollback(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	tm, err := h.Factory.TransactionManager(ctx)
+	require.NoError(t, err)
+
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+
+	es, err := h.Factory.EntityStore(txCtx)
+	require.NoError(t, err)
+
+	id := newID()
+	_, err = es.Save(txCtx, newEntity(t, "m-op-after-rb", id, map[string]any{"k": "v"}))
+	require.NoError(t, err)
+
+	require.NoError(t, tm.Rollback(txCtx, txID))
+
+	_, err = es.Get(txCtx, id)
+	require.Error(t, err, "Get after Rollback must fail")
+	require.True(t, errors.Is(err, spi.ErrTxTerminated),
+		"op after Rollback must wrap ErrTxTerminated; got: %v", err)
+}
+
+// testTxStateTenantMismatchOnJoin verifies that tenant B cannot Join a
+// transaction begun by tenant A; the error wraps ErrTxTenantMismatch.
+func testTxStateTenantMismatchOnJoin(t *testing.T, h Harness) {
+	ctxA := tenantContext(h.NewTenant())
+	ctxB := tenantContext(h.NewTenant())
+
+	tmA, err := h.Factory.TransactionManager(ctxA)
+	require.NoError(t, err)
+	txID, _, err := tmA.Begin(ctxA)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tmA.Rollback(ctxA, txID) })
+
+	tmB, err := h.Factory.TransactionManager(ctxB)
+	require.NoError(t, err)
+	_, err = tmB.Join(ctxB, txID)
+	require.Error(t, err, "tenant B Join of tenant A tx must fail")
+	require.True(t, errors.Is(err, spi.ErrTxTenantMismatch),
+		"cross-tenant Join must wrap ErrTxTenantMismatch; got: %v", err)
+}
+
+// testTxStateTenantMismatchOnCommit verifies that tenant B cannot Commit a
+// transaction begun by tenant A; the error wraps ErrTxTenantMismatch.
+func testTxStateTenantMismatchOnCommit(t *testing.T, h Harness) {
+	ctxA := tenantContext(h.NewTenant())
+	ctxB := tenantContext(h.NewTenant())
+
+	tmA, err := h.Factory.TransactionManager(ctxA)
+	require.NoError(t, err)
+	txID, txCtxA, err := tmA.Begin(ctxA)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tmA.Rollback(txCtxA, txID) })
+
+	tmB, err := h.Factory.TransactionManager(ctxB)
+	require.NoError(t, err)
+	err = tmB.Commit(ctxB, txID)
+	require.Error(t, err, "tenant B Commit of tenant A tx must fail")
+	require.True(t, errors.Is(err, spi.ErrTxTenantMismatch),
+		"cross-tenant Commit must wrap ErrTxTenantMismatch; got: %v", err)
+}
+
+// testTxStateSavepointNotFound verifies that RollbackToSavepoint with an
+// unknown savepoint id produces ErrSavepointNotFound (which also matches
+// ErrNotFound via Unwrap).
+func testTxStateSavepointNotFound(t *testing.T, h Harness) {
+	ctx := tenantContext(h.NewTenant())
+	tm, err := h.Factory.TransactionManager(ctx)
+	require.NoError(t, err)
+
+	txID, txCtx, err := tm.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tm.Rollback(txCtx, txID) })
+
+	err = tm.RollbackToSavepoint(txCtx, txID, "no-such-savepoint")
+	require.Error(t, err, "RollbackToSavepoint with unknown id must fail")
+	require.True(t, errors.Is(err, spi.ErrSavepointNotFound),
+		"unknown savepoint must wrap ErrSavepointNotFound; got: %v", err)
+	require.True(t, errors.Is(err, spi.ErrNotFound),
+		"ErrSavepointNotFound must also match ErrNotFound via Unwrap; got: %v", err)
 }
