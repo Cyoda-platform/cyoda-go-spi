@@ -84,6 +84,11 @@ var ErrTxAlreadyCommitted = &sentinelErr{msg: "transaction already committed", p
 // transaction another goroutine is already committing. Distinct from
 // ErrTxTerminated because the transaction is not yet terminal — the
 // loser of the race may still observe the committed result.
+//
+// Note: this sentinel has no portable conformance subtest in spitest
+// because reliably racing two Commit goroutines from a black-box harness
+// is brittle. Backends that own their own in-process commit registry
+// exercise this in their internal concurrency suites.
 var ErrTxCommitInProgress = errors.New("transaction commit in progress")
 
 // ErrTxTenantMismatch indicates a transaction-lifecycle operation

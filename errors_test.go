@@ -85,10 +85,14 @@ func TestTxSentinelsAreDistinct(t *testing.T) {
 
 		// Cross-tree pairs.
 		{"ErrTxRolledBack!~ErrNotFound", ErrTxRolledBack, ErrNotFound},
+		{"ErrTxAlreadyCommitted!~ErrNotFound", ErrTxAlreadyCommitted, ErrNotFound},
 		{"ErrTxNotFound!~ErrTxTerminated", ErrTxNotFound, ErrTxTerminated},
+		{"ErrSavepointNotFound!~ErrTxTerminated", ErrSavepointNotFound, ErrTxTerminated},
 		{"ErrTxTenantMismatch!~ErrTxTerminated", ErrTxTenantMismatch, ErrTxTerminated},
 		{"ErrTxTenantMismatch!~ErrNotFound", ErrTxTenantMismatch, ErrNotFound},
 		{"ErrTxCommitInProgress!~ErrTxNotFound", ErrTxCommitInProgress, ErrTxNotFound},
+		{"ErrTxRolledBack!~ErrTxCommitInProgress", ErrTxRolledBack, ErrTxCommitInProgress},
+		{"ErrTxAlreadyCommitted!~ErrTxCommitInProgress", ErrTxAlreadyCommitted, ErrTxCommitInProgress},
 
 		// Existing sentinels stay clean.
 		{"ErrConflict!~ErrTxTerminated", ErrConflict, ErrTxTerminated},

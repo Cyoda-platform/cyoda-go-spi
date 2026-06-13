@@ -217,6 +217,8 @@ func testTxBeginAfterCommit(t *testing.T, h Harness) {
 	// the ErrTxTerminated parent via Unwrap) lives in TxStateErrors/
 	// JoinAfterCommit. Both coexist intentionally: this one runs against
 	// backends that haven't yet conformed to the sentinel contract.
+	// TODO(retire-when-all-backends-conform): drop this subtest once every
+	// known consumer asserts the strict TxStateErrors/JoinAfterCommit path.
 	_, err = tm.Join(ctx, txID)
 	require.Error(t, err, "Join against committed txID must fail")
 }
@@ -279,9 +281,9 @@ func testTxStateCommitAfterRollback(t *testing.T, h Harness) {
 }
 
 // testTxStateOpAfterRollback verifies that a data op against a rolled-back
-// transaction produces ErrTxTerminated. Backends with remote tx state
-// (postgres) may skip this via Harness.Skip — see the ErrTxTerminated
-// godoc caveat.
+// transaction produces ErrTxTerminated. Backends that delegate transaction
+// state to an external engine may skip this via Harness.Skip — see the
+// ErrTxTerminated godoc caveat.
 func testTxStateOpAfterRollback(t *testing.T, h Harness) {
 	ctx := tenantContext(h.NewTenant())
 	tm, err := h.Factory.TransactionManager(ctx)
