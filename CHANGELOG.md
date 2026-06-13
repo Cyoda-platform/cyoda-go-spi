@@ -12,6 +12,32 @@ MAINTAINING.md.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-13
+
+### Added
+
+- Transaction-state sentinel hierarchy: `ErrTxNotFound`,
+  `ErrSavepointNotFound`, `ErrTxTerminated`, `ErrTxRolledBack`,
+  `ErrTxAlreadyCommitted`, `ErrTxCommitInProgress`,
+  `ErrTxTenantMismatch`. Backwards-compatible: `ErrTxNotFound` and
+  `ErrSavepointNotFound` wrap `ErrNotFound`, so existing
+  `errors.Is(err, ErrNotFound)` callers continue to match.
+- Seven new `spitest/transaction.go` subtests asserting backend
+  conformance to the sentinel contract.
+
+### Notes for consumers
+
+- Plugins should wrap the sentinels at every tx-state error site.
+  The in-tree memory, sqlite, and postgres plugins in `cyoda-go`
+  are migrated as part of the corresponding `cyoda-go v0.8.0`
+  release.
+- The `OpAfterRollback` subtest may be skipped on backends that
+  delegate transaction state to an external engine — such backends
+  surface mid-op rollback as `ErrConflict` rather than
+  `ErrTxTerminated` (for example, the postgres plugin reports
+  SQLSTATE `25P02` via `pgx.Tx`). See `ErrTxTerminated` godoc for
+  details.
+
 ## [0.7.1] - 2026-05-05
 
 ### Added
