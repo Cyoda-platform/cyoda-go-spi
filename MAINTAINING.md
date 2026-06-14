@@ -11,9 +11,24 @@ projects that depend on this module's stability).
 than the Git tag itself. We do not use a `release/` branch — the repo is
 small enough that direct-to-main is appropriate.
 
+### When to tag
+
+**Tag at end-of-milestone, not per-PR.** cyoda-go-spi and cyoda-go ship in
+lock-step: cyoda-go-spi vX.Y.Z is cut when *every* SPI change targeted at
+the corresponding cyoda-go vX.Y.Z milestone has been merged into
+cyoda-go-spi `main`. Cutting earlier creates a tag that doesn't represent
+a usable milestone release — and tag immutability means we can't fix it
+after the fact without breaking the convention (see the v0.8.0 retraction
+note in CHANGELOG.md for the one case where this happened).
+
+If unsure whether more SPI changes are coming for the current milestone,
+do not tag. cyoda-go pins to a pseudo-version against `main` while the
+milestone is in flight; the pin bump to the published tag is the final
+step.
+
 ### 1. Cut a release
 
-From an up-to-date `main`:
+From an up-to-date `main`, when the milestone is complete:
 
 1. Make sure all merged-since-last-tag changes are reflected in `CHANGELOG.md`'s `[Unreleased]` section.
 2. As a final preparation commit, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and push to `main`.
