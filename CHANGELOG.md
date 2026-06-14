@@ -39,6 +39,9 @@ MAINTAINING.md.
   `errors.Is(err, ErrNotFound)` callers continue to match.
 - Seven new `spitest/transaction.go` subtests asserting backend
   conformance to the sentinel contract.
+- Added `Iterable` / `Iterator` / `IterateOptions` SPI for filter-aware streaming iteration (#299 in cyoda-go).
+- Added `GroupedAggregator` SPI for native GROUP BY pushdown plus `GroupExpr`, `AggregateOp`, `AggregateExpr`, `GroupedAggregationsOptions`, `GroupKeyEntry`, `GroupedAggregateBucket` (#299 in cyoda-go).
+- Added sentinels `ErrGroupCardinalityExceeded`, `ErrAggregationNotPushdownable`.
 
 ### Notes for consumers
 
