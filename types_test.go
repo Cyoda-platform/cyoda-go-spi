@@ -118,3 +118,51 @@ func TestTransitionSchedule_RoundTrips(t *testing.T) {
 		t.Errorf("nil TimeoutMs round-trip surfaced a non-nil pointer: %v", back3.TimeoutMs)
 	}
 }
+
+func TestTransitionDefinition_Schedule_RoundTrips(t *testing.T) {
+	tm := int64(5000)
+	tr := TransitionDefinition{
+		Name:     "AutoClose",
+		Next:     "Closed",
+		Manual:   false,
+		Schedule: &TransitionSchedule{DelayMs: 86400000, TimeoutMs: &tm},
+	}
+	bs, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bs), `"schedule":{"delayMs":86400000,"timeoutMs":5000}`) {
+		t.Errorf("schedule field missing or wrong shape: %s", bs)
+	}
+
+	var back TransitionDefinition
+	if err := json.Unmarshal(bs, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Schedule == nil {
+		t.Fatalf("Schedule round-trip dropped the field: %+v", back)
+	}
+	if back.Schedule.DelayMs != 86400000 {
+		t.Errorf("Schedule.DelayMs lost value: got %d", back.Schedule.DelayMs)
+	}
+	if back.Schedule.TimeoutMs == nil || *back.Schedule.TimeoutMs != 5000 {
+		t.Errorf("Schedule.TimeoutMs lost value: got %v", back.Schedule.TimeoutMs)
+	}
+
+	// Schedule omitted is preserved as nil through round-trip.
+	trNoSched := TransitionDefinition{Name: "Foo", Next: "Bar"}
+	bs2, err := json.Marshal(trNoSched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bs2), "schedule") {
+		t.Errorf("nil Schedule should be omitted, got %s", bs2)
+	}
+	var back2 TransitionDefinition
+	if err := json.Unmarshal(bs2, &back2); err != nil {
+		t.Fatal(err)
+	}
+	if back2.Schedule != nil {
+		t.Errorf("Schedule round-trip surfaced a non-nil pointer for absent field: %v", back2.Schedule)
+	}
+}

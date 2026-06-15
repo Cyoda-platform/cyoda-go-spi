@@ -134,6 +134,7 @@ type TransitionDefinition struct {
 	Disabled   bool                  `json:"disabled,omitempty"`
 	Criterion  json.RawMessage       `json:"criterion,omitempty"`
 	Processors []ProcessorDefinition `json:"processors,omitempty"`
+	Schedule   *TransitionSchedule   `json:"schedule,omitempty"`
 }
 
 // ProcessorDefinition represents a processor attached to a transition.
