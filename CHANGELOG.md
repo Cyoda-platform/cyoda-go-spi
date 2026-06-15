@@ -39,8 +39,8 @@ MAINTAINING.md.
   `errors.Is(err, ErrNotFound)` callers continue to match.
 - Seven new `spitest/transaction.go` subtests asserting backend
   conformance to the sentinel contract.
-- Added `Iterable` / `Iterator` / `IterateOptions` SPI for filter-aware streaming iteration (#299 in cyoda-go).
-- Added `GroupedAggregator` SPI for native GROUP BY pushdown plus `GroupExpr`, `AggregateOp`, `AggregateExpr`, `GroupedAggregationsOptions`, `GroupKeyEntry`, `GroupedAggregateBucket` (#299 in cyoda-go).
+- Added `Iterable` / `Iterator` / `IterateOptions` SPI for filter-aware streaming iteration over a model's entities. Used by cyoda-go's grouped-stats endpoint as the streaming-tally fallback when native GROUP BY pushdown isn't available.
+- Added `GroupedAggregator` SPI for native GROUP BY pushdown plus `GroupExpr`, `AggregateOp`, `AggregateExpr`, `GroupedAggregationsOptions`, `GroupKeyEntry`, `GroupedAggregateBucket`. Plugins that can answer grouped-aggregation queries in one storage roundtrip implement this; those that decline a specific request shape signal fall-through via `ErrAggregationNotPushdownable`.
 - Added sentinels `ErrGroupCardinalityExceeded`, `ErrAggregationNotPushdownable`.
 
 ### Notes for consumers
