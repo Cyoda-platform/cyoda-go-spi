@@ -42,6 +42,19 @@ MAINTAINING.md.
 - Added `Iterable` / `Iterator` / `IterateOptions` SPI for filter-aware streaming iteration over a model's entities. Used by cyoda-go's grouped-stats endpoint as the streaming-tally fallback when native GROUP BY pushdown isn't available.
 - Added `GroupedAggregator` SPI for native GROUP BY pushdown plus `GroupExpr`, `AggregateOp`, `AggregateExpr`, `GroupedAggregationsOptions`, `GroupKeyEntry`, `GroupedAggregateBucket`. Plugins that can answer grouped-aggregation queries in one storage roundtrip implement this; those that decline a specific request shape signal fall-through via `ErrAggregationNotPushdownable`.
 - Added sentinels `ErrGroupCardinalityExceeded`, `ErrAggregationNotPushdownable`.
+- `TransitionSchedule` type + `TransitionDefinition.Schedule` field for
+  the scheduled-transition shape carve-out (cyoda-go #259). The new
+  type carries `DelayMs` (required, >0) and `TimeoutMs *int64`
+  (optional; nil = no timeout, &0 = strictest, &N = drop if late > N
+  ms). Runtime not yet wired — see cyoda-go #251 for full feature
+  tracking.
+
+### Changed
+
+- Document `ProcessorDefinition.Type` field as the execution-location
+  axis (deferred from cyoda-go #250 per its spec §5.3, intentionally
+  bundled with the first substantive SPI carve-out — that is cyoda-go
+  #259).
 
 ### Notes for consumers
 
