@@ -1,7 +1,6 @@
 package spi_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,16 +11,13 @@ import (
 // and the expected method set is present. Runtime behavior is tested by
 // plugin implementations in their own repos.
 func TestIterableContract(t *testing.T) {
+	// Compile-time signature checks; runtime semantics are exercised by
+	// plugin parity tests in cyoda-go's e2e/parity registry.
 	var _ spi.Iterable = (spi.Iterable)(nil)
 	var _ spi.Iterator = (spi.Iterator)(nil)
 
+	// IterateOptions usage check.
 	var opts spi.IterateOptions
 	now := time.Now()
 	opts.PointInTime = &now
-
-	// Verify Iterate signature
-	var iter spi.Iterable
-	if iter != nil {
-		_, _ = iter.Iterate(context.Background(), spi.ModelRef{}, spi.Filter{}, spi.IterateOptions{})
-	}
 }

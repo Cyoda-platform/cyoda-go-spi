@@ -55,6 +55,11 @@ MAINTAINING.md.
   `ErrTxTerminated` (for example, the postgres plugin reports
   SQLSTATE `25P02` via `pgx.Tx`). See `ErrTxTerminated` godoc for
   details.
+- The new `Iterable` and `GroupedAggregator` interfaces are optional via
+  type assertion. Out-of-tree plugins MAY skip implementing them; cyoda-go's
+  service layer returns 501 NOT_IMPLEMENTED_BY_BACKEND for the grouped-stats
+  endpoint when neither is present. No code changes required to remain
+  compatible.
 
 ## [0.7.1] - 2026-05-05
 

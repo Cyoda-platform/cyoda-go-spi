@@ -62,9 +62,11 @@ type AggregateExpr struct {
 // GroupedAggregationsOptions parameterizes the GroupedAggregate call.
 type GroupedAggregationsOptions struct {
 	PointInTime *time.Time
-	// MaxBuckets is the result cardinality ceiling. The implementation
-	// must return ErrGroupCardinalityExceeded if the result would exceed
-	// this count.
+	// MaxBuckets is the result cardinality ceiling. MUST be > 0; the SPI
+	// does not define semantics for zero or negative values, and the
+	// caller (typically the service layer) is responsible for applying a
+	// default when the user omits the value. Implementations MUST return
+	// ErrGroupCardinalityExceeded if the result would exceed this count.
 	MaxBuckets   int
 	Aggregations []AggregateExpr
 }
@@ -73,7 +75,9 @@ type GroupedAggregationsOptions struct {
 type GroupKeyEntry struct {
 	Path string
 	// Value is the JSON-typed value: string for scalar/state values, nil
-	// for missing/literal-null/non-scalar extracted values.
+	// for missing/literal-null/non-scalar extracted values. Carried as any
+	// rather than *string to leave room for non-string scalar key types in
+	// future GroupExpr variants without breaking the SPI surface.
 	Value any
 }
 
@@ -83,6 +87,8 @@ type GroupedAggregateBucket struct {
 	GroupKey []GroupKeyEntry
 	Count    int64
 	// Aggregations maps alias to float64 or nil. nil means the bucket had
-	// zero numeric samples for that field.
+	// zero numeric samples for that field. Carried as any rather than
+	// *float64 to leave room for future non-numeric aggregations (mode,
+	// percentile_bucket, etc.) without breaking the SPI surface.
 	Aggregations map[string]any
 }
