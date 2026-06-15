@@ -134,10 +134,20 @@ type TransitionDefinition struct {
 	Disabled   bool                  `json:"disabled,omitempty"`
 	Criterion  json.RawMessage       `json:"criterion,omitempty"`
 	Processors []ProcessorDefinition `json:"processors,omitempty"`
+	Schedule   *TransitionSchedule   `json:"schedule,omitempty"`
 }
 
 // ProcessorDefinition represents a processor attached to a transition.
 type ProcessorDefinition struct {
+	// Type is the execution-location axis. Recognised values are defined
+	// by the cyoda-go engine package; canonical values are "externalized"
+	// (dispatched via gRPC to a calculation node selected by
+	// Config.CalculationNodesTags) and "internalized" (reserved for an
+	// in-process execution location, currently rejected at engine
+	// dispatch as not yet implemented). Empty is treated as "externalized".
+	// Any value other than "internalized" falls through to the
+	// ExecutionMode dispatch path; import-time validation does not
+	// constrain this field.
 	Type          string          `json:"type"`
 	Name          string          `json:"name"`
 	ExecutionMode string          `json:"executionMode,omitempty"`
@@ -158,6 +168,49 @@ type ProcessorConfig struct {
 	// context and the connection is released entirely during dispatch.
 	// Ignored for any other ExecutionMode.
 	StartNewTxOnDispatch *bool `json:"startNewTxOnDispatch,omitempty"`
+}
+
+// TransitionSchedule configures automatic firing of a future state
+// transition. Presence of this struct on a TransitionDefinition marks
+// the transition as scheduled.
+//
+// Semantics. The scheduled execution time of the transition is
+// scheduledTime = stateEntryTime + DelayMs. When the scheduler picks
+// the task up at executionTime, it computes
+// lateness = executionTime - scheduledTime.
+//   - If TimeoutMs is nil, the task is always attempted (no timeout).
+//   - If TimeoutMs is non-nil and lateness > *TimeoutMs, the task is
+//     dropped and the transition is NOT attempted.
+//   - If TimeoutMs is non-nil and lateness <= *TimeoutMs (including
+//     *TimeoutMs == 0 when lateness is 0), the transition fires.
+//
+// TimeoutMs gives operators control over how the system handles
+// backlog and intermittent-offline conditions. Short positive values
+// prefer freshness — stale tasks are discarded rather than fired
+// against a possibly-changed entity. Nil prefers eventual execution.
+//
+// Scheduled transitions are mutually exclusive with Manual=true.
+//
+// Scheduled transitions are a special case of a generic ScheduledTask
+// abstraction. The lateness-tolerance concept (TimeoutMs) applies
+// uniformly across all ScheduledTask variants. The generic
+// abstraction and the runtime that implements it ship in a later
+// release; until then, consuming engines silently skip scheduled
+// transitions during automated cascade selection and reject explicit
+// fires by name with a transition-not-found error.
+type TransitionSchedule struct {
+	// DelayMs is the delay between source-state entry and the
+	// scheduled execution time, in milliseconds. Must be > 0.
+	DelayMs int64 `json:"delayMs"`
+
+	// TimeoutMs is the late-tolerance window past the scheduled
+	// execution time, in milliseconds. Nil means no timeout — the
+	// task fires whenever the scheduler eventually picks it up.
+	// Non-nil zero is the strictest setting — drop on any lateness.
+	// Non-nil positive N drops the task if it picks up more than N
+	// milliseconds after scheduledTime. Independent of DelayMs; the
+	// two measure different quantities.
+	TimeoutMs *int64 `json:"timeoutMs,omitempty"`
 }
 
 // --- State machine event types ---

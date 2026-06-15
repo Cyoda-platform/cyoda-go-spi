@@ -56,3 +56,113 @@ func TestProcessorConfig_StartNewTxOnDispatch_RoundTrips(t *testing.T) {
 		t.Errorf("nil pointer should be omitted, got %s", bs2)
 	}
 }
+
+func TestTransitionSchedule_RoundTrips(t *testing.T) {
+	// Non-nil positive TimeoutMs round-trips byte-equivalent.
+	tm := int64(5000)
+	sched := TransitionSchedule{DelayMs: 1000, TimeoutMs: &tm}
+	bs, err := json.Marshal(sched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bs), `"delayMs":1000`) {
+		t.Errorf("missing delayMs: %s", bs)
+	}
+	if !strings.Contains(string(bs), `"timeoutMs":5000`) {
+		t.Errorf("missing timeoutMs: %s", bs)
+	}
+
+	var back TransitionSchedule
+	if err := json.Unmarshal(bs, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.DelayMs != 1000 {
+		t.Errorf("DelayMs round-trip lost value: got %d", back.DelayMs)
+	}
+	if back.TimeoutMs == nil || *back.TimeoutMs != 5000 {
+		t.Errorf("TimeoutMs round-trip lost value: got %v", back.TimeoutMs)
+	}
+
+	// Non-nil zero TimeoutMs (strictest semantic) survives omitempty.
+	zero := int64(0)
+	schedZero := TransitionSchedule{DelayMs: 1000, TimeoutMs: &zero}
+	bs2, err := json.Marshal(schedZero)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bs2), `"timeoutMs":0`) {
+		t.Errorf("non-nil zero TimeoutMs should marshal as timeoutMs:0, got %s", bs2)
+	}
+	var back2 TransitionSchedule
+	if err := json.Unmarshal(bs2, &back2); err != nil {
+		t.Fatal(err)
+	}
+	if back2.TimeoutMs == nil || *back2.TimeoutMs != 0 {
+		t.Errorf("non-nil zero TimeoutMs round-trip dropped distinction: %v", back2.TimeoutMs)
+	}
+
+	// Nil TimeoutMs (no-timeout semantic) does not marshal.
+	schedNil := TransitionSchedule{DelayMs: 1000}
+	bs3, err := json.Marshal(schedNil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bs3), "timeoutMs") {
+		t.Errorf("nil TimeoutMs should be omitted, got %s", bs3)
+	}
+	var back3 TransitionSchedule
+	if err := json.Unmarshal(bs3, &back3); err != nil {
+		t.Fatal(err)
+	}
+	if back3.TimeoutMs != nil {
+		t.Errorf("nil TimeoutMs round-trip surfaced a non-nil pointer: %v", back3.TimeoutMs)
+	}
+}
+
+func TestTransitionDefinition_Schedule_RoundTrips(t *testing.T) {
+	tm := int64(5000)
+	tr := TransitionDefinition{
+		Name:     "AutoClose",
+		Next:     "Closed",
+		Manual:   false,
+		Schedule: &TransitionSchedule{DelayMs: 86400000, TimeoutMs: &tm},
+	}
+	bs, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bs), `"schedule":{"delayMs":86400000,"timeoutMs":5000}`) {
+		t.Errorf("schedule field missing or wrong shape: %s", bs)
+	}
+
+	var back TransitionDefinition
+	if err := json.Unmarshal(bs, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Schedule == nil {
+		t.Fatalf("Schedule round-trip dropped the field: %+v", back)
+	}
+	if back.Schedule.DelayMs != 86400000 {
+		t.Errorf("Schedule.DelayMs lost value: got %d", back.Schedule.DelayMs)
+	}
+	if back.Schedule.TimeoutMs == nil || *back.Schedule.TimeoutMs != 5000 {
+		t.Errorf("Schedule.TimeoutMs lost value: got %v", back.Schedule.TimeoutMs)
+	}
+
+	// Schedule omitted is preserved as nil through round-trip.
+	trNoSched := TransitionDefinition{Name: "Foo", Next: "Bar"}
+	bs2, err := json.Marshal(trNoSched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bs2), "schedule") {
+		t.Errorf("nil Schedule should be omitted, got %s", bs2)
+	}
+	var back2 TransitionDefinition
+	if err := json.Unmarshal(bs2, &back2); err != nil {
+		t.Fatal(err)
+	}
+	if back2.Schedule != nil {
+		t.Errorf("Schedule round-trip surfaced a non-nil pointer for absent field: %v", back2.Schedule)
+	}
+}
