@@ -48,6 +48,14 @@ MAINTAINING.md.
   (optional; nil = no timeout, &0 = strictest, &N = drop if late > N
   ms). Runtime not yet wired — see cyoda-go #251 for full feature
   tracking.
+- `ProcessorConfig.AsyncResult *bool` and
+  `ProcessorConfig.CrossoverToAsyncMs *int64` for the async-result /
+  crossover-timer configuration shape carve-out (cyoda-go #261). The
+  fields are pointer-typed (omitempty) so the absent case round-trips
+  byte-equivalent. Runtime not yet wired — see cyoda-go #223 for full
+  feature tracking. Consuming engines that do not implement
+  async-result semantics MUST reject non-default values at the
+  configuration-import boundary rather than silently degrade.
 
 ### Changed
 

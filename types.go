@@ -168,6 +168,28 @@ type ProcessorConfig struct {
 	// context and the connection is released entirely during dispatch.
 	// Ignored for any other ExecutionMode.
 	StartNewTxOnDispatch *bool `json:"startNewTxOnDispatch,omitempty"`
+
+	// AsyncResult, when true, requests that the cascade engine suspend
+	// the transaction at processor dispatch and resume only when the
+	// processor's result eventually arrives via the async-result
+	// delivery slot. The runtime that implements this — durable
+	// suspend state, work-stealing recovery, distributed timer
+	// coordination — is gated on storage-engine primitives not
+	// available in every backend. Consuming engines that do not
+	// implement async-result semantics MUST reject this field at
+	// import (or the equivalent configuration-boundary) rather than
+	// silently degrade to synchronous dispatch.
+	//
+	// Pointer so that nil (absent) and &false (explicit no-async) are
+	// distinguishable on the wire and round-trip byte-equivalent.
+	AsyncResult *bool `json:"asyncResult,omitempty"`
+
+	// CrossoverToAsyncMs is the timer, in milliseconds, after which
+	// the engine crosses over from sync-wait to async-result delivery
+	// for an AsyncResult=true processor. Effective only when
+	// AsyncResult is true. Consuming engines that do not implement
+	// async-result semantics MUST reject any non-nil value at import.
+	CrossoverToAsyncMs *int64 `json:"crossoverToAsyncMs,omitempty"`
 }
 
 // TransitionSchedule configures automatic firing of a future state

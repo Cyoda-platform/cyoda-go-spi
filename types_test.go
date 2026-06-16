@@ -166,3 +166,95 @@ func TestTransitionDefinition_Schedule_RoundTrips(t *testing.T) {
 		t.Errorf("Schedule round-trip surfaced a non-nil pointer for absent field: %v", back2.Schedule)
 	}
 }
+
+func TestProcessorConfig_AsyncResultAndCrossover_RoundTrips(t *testing.T) {
+	// Helper to make pointer literals readable.
+	boolPtr := func(b bool) *bool { return &b }
+	i64Ptr := func(i int64) *int64 { return &i }
+
+	cases := []struct {
+		name          string
+		cfg           ProcessorConfig
+		wantInJSON    []string // substrings that MUST appear
+		wantNotInJSON []string // substrings that MUST NOT appear
+	}{
+		{
+			name:          "both_nil_omitted",
+			cfg:           ProcessorConfig{},
+			wantNotInJSON: []string{"asyncResult", "crossoverToAsyncMs"},
+		},
+		{
+			name:          "async_true_only",
+			cfg:           ProcessorConfig{AsyncResult: boolPtr(true)},
+			wantInJSON:    []string{`"asyncResult":true`},
+			wantNotInJSON: []string{"crossoverToAsyncMs"},
+		},
+		{
+			name:          "async_false_only",
+			cfg:           ProcessorConfig{AsyncResult: boolPtr(false)},
+			wantInJSON:    []string{`"asyncResult":false`},
+			wantNotInJSON: []string{"crossoverToAsyncMs"},
+		},
+		{
+			name:          "crossover_zero_only",
+			cfg:           ProcessorConfig{CrossoverToAsyncMs: i64Ptr(0)},
+			wantInJSON:    []string{`"crossoverToAsyncMs":0`},
+			wantNotInJSON: []string{"asyncResult"},
+		},
+		{
+			name:          "crossover_positive_only",
+			cfg:           ProcessorConfig{CrossoverToAsyncMs: i64Ptr(5000)},
+			wantInJSON:    []string{`"crossoverToAsyncMs":5000`},
+			wantNotInJSON: []string{"asyncResult"},
+		},
+		{
+			name:       "both_set",
+			cfg:        ProcessorConfig{AsyncResult: boolPtr(true), CrossoverToAsyncMs: i64Ptr(5000)},
+			wantInJSON: []string{`"asyncResult":true`, `"crossoverToAsyncMs":5000`},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bs, err := json.Marshal(tc.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tc.wantInJSON {
+				if !strings.Contains(string(bs), want) {
+					t.Errorf("expected JSON to contain %q; got %s", want, bs)
+				}
+			}
+			for _, notWant := range tc.wantNotInJSON {
+				if strings.Contains(string(bs), notWant) {
+					t.Errorf("expected JSON NOT to contain %q; got %s", notWant, bs)
+				}
+			}
+
+			var back ProcessorConfig
+			if err := json.Unmarshal(bs, &back); err != nil {
+				t.Fatal(err)
+			}
+			// Pointer-state-preserving equality for AsyncResult.
+			if (back.AsyncResult == nil) != (tc.cfg.AsyncResult == nil) {
+				t.Errorf("AsyncResult pointer-presence mismatched: got %v, want %v",
+					back.AsyncResult, tc.cfg.AsyncResult)
+			}
+			if back.AsyncResult != nil && tc.cfg.AsyncResult != nil &&
+				*back.AsyncResult != *tc.cfg.AsyncResult {
+				t.Errorf("AsyncResult value mismatched: got %v, want %v",
+					*back.AsyncResult, *tc.cfg.AsyncResult)
+			}
+			// Pointer-state-preserving equality for CrossoverToAsyncMs.
+			if (back.CrossoverToAsyncMs == nil) != (tc.cfg.CrossoverToAsyncMs == nil) {
+				t.Errorf("CrossoverToAsyncMs pointer-presence mismatched: got %v, want %v",
+					back.CrossoverToAsyncMs, tc.cfg.CrossoverToAsyncMs)
+			}
+			if back.CrossoverToAsyncMs != nil && tc.cfg.CrossoverToAsyncMs != nil &&
+				*back.CrossoverToAsyncMs != *tc.cfg.CrossoverToAsyncMs {
+				t.Errorf("CrossoverToAsyncMs value mismatched: got %d, want %d",
+					*back.CrossoverToAsyncMs, *tc.cfg.CrossoverToAsyncMs)
+			}
+		})
+	}
+}
