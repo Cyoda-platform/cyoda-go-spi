@@ -207,8 +207,11 @@ func TestWorkflowAnnotations_RoundTrip(t *testing.T) {
 		t.Errorf("transition annotations round-trip: got %s", back.States["S"].Transitions[0].Annotations)
 	}
 
-	// Absent annotations are omitted (omitempty).
-	plain, _ := json.Marshal(WorkflowDefinition{Name: "p", Version: "1.1", InitialState: "S", States: map[string]StateDefinition{"S": {}}})
+	// Absent annotations are omitted (omitempty) — state carries a
+	// transition with nil Annotations to exercise all three levels.
+	plain, _ := json.Marshal(WorkflowDefinition{Name: "p", Version: "1.1", InitialState: "S", States: map[string]StateDefinition{
+		"S": {Transitions: []TransitionDefinition{{Name: "t", Next: "S"}}},
+	}})
 	if strings.Contains(string(plain), "annotations") {
 		t.Errorf("nil annotations should be omitted, got %s", plain)
 	}
