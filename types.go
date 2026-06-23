@@ -119,11 +119,17 @@ type WorkflowDefinition struct {
 	Active       bool                       `json:"active"`
 	Criterion    json.RawMessage            `json:"criterion,omitempty"`
 	States       map[string]StateDefinition `json:"states"`
+	// Annotations is arbitrary client-owned metadata, stored and
+	// round-tripped verbatim and never interpreted by the engine.
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
 // StateDefinition represents a state with its transitions.
 type StateDefinition struct {
 	Transitions []TransitionDefinition `json:"transitions,omitempty"`
+	// Annotations is arbitrary client-owned metadata, stored and
+	// round-tripped verbatim and never interpreted by the engine.
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
 // TransitionDefinition represents a single transition from a state.
@@ -135,6 +141,9 @@ type TransitionDefinition struct {
 	Criterion  json.RawMessage       `json:"criterion,omitempty"`
 	Processors []ProcessorDefinition `json:"processors,omitempty"`
 	Schedule   *TransitionSchedule   `json:"schedule,omitempty"`
+	// Annotations is arbitrary client-owned metadata, stored and
+	// round-tripped verbatim and never interpreted by the engine.
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
 // ProcessorDefinition represents a processor attached to a transition.
