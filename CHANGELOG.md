@@ -56,6 +56,10 @@ MAINTAINING.md.
   feature tracking. Consuming engines that do not implement
   async-result semantics MUST reject non-default values at the
   configuration-import boundary rather than silently degrade.
+- `Annotations json.RawMessage` field on `WorkflowDefinition`,
+  `StateDefinition`, and `TransitionDefinition` for opaque,
+  client-owned metadata. Stored and round-tripped; the engine does not
+  validate or interpret the contents.
 
 ### Changed
 

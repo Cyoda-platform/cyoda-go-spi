@@ -167,6 +167,56 @@ func TestTransitionDefinition_Schedule_RoundTrips(t *testing.T) {
 	}
 }
 
+func TestWorkflowAnnotations_RoundTrip(t *testing.T) {
+	wf := WorkflowDefinition{
+		Name:         "wf",
+		Version:      "1.1",
+		InitialState: "S",
+		Active:       true,
+		Annotations:  json.RawMessage(`{"roles":["admin"]}`),
+		States: map[string]StateDefinition{
+			"S": {
+				Annotations: json.RawMessage(`{"label":"Start"}`),
+				Transitions: []TransitionDefinition{
+					{Name: "t", Next: "S", Annotations: json.RawMessage(`{"icon":"x"}`)},
+				},
+			},
+		},
+	}
+	bs, err := json.Marshal(wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"annotations":{"roles":["admin"]}`, `"annotations":{"label":"Start"}`, `"annotations":{"icon":"x"}`} {
+		if !strings.Contains(string(bs), want) {
+			t.Errorf("marshalled JSON missing %s: %s", want, bs)
+		}
+	}
+
+	var back WorkflowDefinition
+	if err := json.Unmarshal(bs, &back); err != nil {
+		t.Fatal(err)
+	}
+	if string(back.Annotations) != `{"roles":["admin"]}` {
+		t.Errorf("workflow annotations round-trip: got %s", back.Annotations)
+	}
+	if string(back.States["S"].Annotations) != `{"label":"Start"}` {
+		t.Errorf("state annotations round-trip: got %s", back.States["S"].Annotations)
+	}
+	if string(back.States["S"].Transitions[0].Annotations) != `{"icon":"x"}` {
+		t.Errorf("transition annotations round-trip: got %s", back.States["S"].Transitions[0].Annotations)
+	}
+
+	// Absent annotations are omitted (omitempty) — state carries a
+	// transition with nil Annotations to exercise all three levels.
+	plain, _ := json.Marshal(WorkflowDefinition{Name: "p", Version: "1.1", InitialState: "S", States: map[string]StateDefinition{
+		"S": {Transitions: []TransitionDefinition{{Name: "t", Next: "S"}}},
+	}})
+	if strings.Contains(string(plain), "annotations") {
+		t.Errorf("nil annotations should be omitted, got %s", plain)
+	}
+}
+
 func TestProcessorConfig_AsyncResultAndCrossover_RoundTrips(t *testing.T) {
 	// Helper to make pointer literals readable.
 	boolPtr := func(b bool) *bool { return &b }
