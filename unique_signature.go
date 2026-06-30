@@ -1,5 +1,19 @@
 package spi
 
+// Signature grammar for ComputeClaims
+//
+// Each field value is encoded as a type-tagged token; all tokens for a key are
+// joined by the ASCII Unit Separator byte (0x1F, \x1f) to form the signature.
+//
+//	string  →  s{len}:{value}     (length-prefix is mandatory — see below)
+//	bool    →  b:true | b:false
+//	number  →  n:{reduced-rational}   (via math/big.Rat.RatString; 42, 42.0, 4.2e1 → "n:42")
+//
+// The string length-prefix (`s{len}:`) is what guarantees INJECTIVITY (collision
+// safety): without it, a value containing the separator byte or mimicking an
+// adjacent token's prefix (e.g. "s2:ab") could forge another value-set's
+// signature. The length-prefix MUST NOT be removed or simplified.
+
 import (
 	"bytes"
 	"encoding/json"
@@ -43,8 +57,10 @@ func ComputeClaims(keys []UniqueKey, doc []byte) ([]UniqueClaim, error) {
 	var root map[string]any
 	dec := json.NewDecoder(bytes.NewReader(doc))
 	dec.UseNumber()
+	// Callers guarantee a schema-validated JSON object document; reaching this
+	// branch is an internal invariant violation, not a user input error.
 	if err := dec.Decode(&root); err != nil {
-		return nil, fmt.Errorf("document is not a JSON object: %w", err)
+		return nil, fmt.Errorf("compute claims: expected JSON object document: %w", err)
 	}
 
 	var claims []UniqueClaim
@@ -98,6 +114,13 @@ func computeOneClaim(key UniqueKey, root map[string]any) (*UniqueClaim, error) {
 // walkPath resolves a dotted JSONPath (e.g. "$.a.b") by splitting on "."
 // and walking nested maps. Returns (value, true, nil) if found, (nil, false, nil)
 // if absent, or an error if an intermediate segment is not a map.
+//
+// Supported grammar: dot-separated object-key traversal to a scalar leaf.
+// Limitations key authors must be aware of:
+//   - No array indexing: "$.items[0]" is silently treated as a missing map key,
+//     not an element lookup.
+//   - Literal dots in key names are not addressable: a JSON key "a.b" cannot be
+//     reached — the path "$.a.b" always descends into nested objects.
 func walkPath(field string, root map[string]any) (any, bool, error) {
 	// Drop the leading "$" — paths look like "$.foo" or "$.a.b".
 	path := strings.TrimPrefix(field, "$")
@@ -150,7 +173,7 @@ func tokenize(field string, val any) (string, error) {
 
 // canonNum canonicalizes a JSON numeric literal to a stable string.
 // It first checks the literal's digit count and exponent magnitude against
-// maxNumDigits / maxNumExp WITHOUT materializing any big.Int, then delegates
+// maxCoeffDigits / maxNumExp WITHOUT materializing any big.Int, then delegates
 // to math/big.Rat for normalization. 42, 42.0, and 4.2e1 all produce "n:42".
 func canonNum(n json.Number) (string, error) {
 	s := string(n)
